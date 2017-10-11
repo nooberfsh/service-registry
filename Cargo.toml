@@ -1,0 +1,24 @@
+[package]
+name = "service-registry"
+version = "0.1.0"
+authors = ["nooberfsh <nooberfsh@gmail.com>"]
+
+[dependencies]
+futures = "0.1"
+tokio-core = "0.1"
+tokio-io = "0.1"
+log = "0.3"
+bytes = "0.4"
+protobuf = "1.4"
+mio = "0.6"
+
+[dependencies.uuid]
+version = "0.5"
+features = ["v4"]
+
+[dependencies.future-worker]
+git = "http://gitlab.tanjiavr.com/tom/future-worker.git"
+
+[dependencies.grpcio]
+version = "0.1"
+features = ["default", "link-sys"]
