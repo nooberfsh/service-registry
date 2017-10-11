@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package heartbeat;
+
+message HeartbeatRequest {
+	uint32 msg = 1;
+}
+
+message HeartbeatResponse {
+	uint32 msg = 1;
+}

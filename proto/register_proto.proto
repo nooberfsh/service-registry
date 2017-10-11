@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package register;
+
+message RegisterRequest {
+	uint64 service_id = 1;
+}
+
+message StatusRequest {
+	bool heartbeat_succeed = 1;
+	bool service_succeed = 2;
+	uint64 session_id = 3;
+}
+
+message RegisterResponse {
+	uint32 heartbeat_port = 1;
+	uint32 service_port = 2;
+	uint64 session_id = 3;
+}
+
+message ResumeRequest {
+	uint32 heartbeat_port = 1;
+	uint32 service_port = 2;
+	uint64 service_id = 3;
+}
+
+message ResumeResponse {
+	bool succeed = 1;
+	string msg = 2;
+}
+
+service Register {
+	rpc Register(RegisterRequest) returns (RegisterResponse) {}
+	rpc ReportStatus(StatusRequest) returns (RegisterResponse) {}
+	rpc Resume(ResumeRequest) returns (ResumeResponse) {}
+}
