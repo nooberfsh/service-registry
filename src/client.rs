@@ -8,7 +8,7 @@ use grpcio::Error;
 use protobuf::{Message as ProtoMessage, MessageStatic};
 use mio::{Poll, Registration, SetReadiness, Ready, Token, PollOpt, Events};
 
-use heartbeat::server::Server;
+use heartbeat::Server;
 use super::register_proto_grpc::*;
 use super::register_proto::*;
 use super::ServiceId;

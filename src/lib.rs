@@ -14,7 +14,7 @@ extern crate protobuf;
 extern crate future_worker;
 
 pub mod heartbeat;
-//pub mod registry;
+
 pub mod client;
 pub mod server;
 mod register_proto;
@@ -36,4 +36,4 @@ impl From<u64> for ServiceId {
 }
 
 #[cfg(test)]
-mod test
+mod test;

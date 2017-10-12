@@ -16,7 +16,7 @@ use super::register_proto::{RegisterResponse, RegisterRequest, StatusRequest, Re
 use futures::Future;
 use uuid::Uuid;
 
-use heartbeat::client::Client as HbClient;
+use heartbeat::Hub as HbClient;
 use super::ServiceId;
 
 fn fresh_session_id() -> usize {
@@ -219,7 +219,7 @@ where
         }
     }
 
-    fn create_hearbeat_manager(&self) -> HbClient<P, Q> {
+    /*fn create_hearbeat_manager(&self) -> HbClient<P, Q> {
         let sender = self.sender.clone();
         let f = move |uuid, rsp: io::Result<Q>| {
             match rsp {
@@ -234,7 +234,7 @@ where
             }
         };
         HbClient::new("heartbeat_manager", self.config.heartbeat_interval, f)
-    }
+    }*/
 
     fn create_rpc_server(&self) -> GrpcServer {
         let env = Arc::new(Environment::new(1));
@@ -249,8 +249,7 @@ where
 
     pub fn start(&mut self, request: P) {
         // start heartbeat module;
-        let mut heartbeat_manager = self.create_hearbeat_manager();
-        heartbeat_manager.start(request);
+        let mut heartbeat_manager = HbClient::new();
 
         // start register rpc server;
         let mut server = self.create_rpc_server();
@@ -270,7 +269,7 @@ where
         loop {
             match inner.receiver.recv().unwrap() {
                 Message::RegisterService(session) => {
-                    let uuid = inner.heartbeat_manager.add_service(
+                    /*let uuid = inner.heartbeat_manager.add_service(
                         session.heartbeat_addr(),
                     );
                     let addr = session.service_addr();
@@ -280,7 +279,7 @@ where
                         let mut lock = inner.services.lock().unwrap();
                         lock.insert(uuid, service);
                     }
-                    (inner.register_service_cb)(sid, addr);
+                    (inner.register_service_cb)(sid, addr);*/
                 }
                 Message::HeartbeatFailed(uuid) => {
                     warn!("heartbeat failed {:?}", uuid);
@@ -291,7 +290,7 @@ where
                     (inner.service_droped_cb)(service.id, service.addr);
                 }
                 Message::Resume(resume) => {
-                    let mut lock = inner.services.lock().unwrap();
+                    /*let mut lock = inner.services.lock().unwrap();
                     for (_, service) in lock.iter() {
                         if service.addr == resume.service_addr() {
                             return;
@@ -301,7 +300,7 @@ where
                     let service = Service::new(resume.service_id, resume.service_addr(), uuid);
                     lock.insert(uuid, service);
                     drop(lock);
-                    (inner.register_service_cb)(resume.service_id, resume.service_addr());
+                    (inner.register_service_cb)(resume.service_id, resume.service_addr());*/
                 }
                 Message::Stop => return,
             }
