@@ -10,8 +10,8 @@ use std::marker::PhantomData;
 
 use grpcio::{Environment, RpcContext, ServerBuilder, UnarySink, Server as GrpcServer};
 use protobuf::{Message as ProtoMessage, MessageStatic};
-use super::register_proto_grpc::{create_register, Register};
-use super::register_proto::{RegisterResponse, RegisterRequest, StatusRequest, ResumeRequest,
+use super::registry_proto_grpc::{create_register, Register};
+use super::registry_proto::{RegisterResponse, RegisterRequest, StatusRequest, ResumeRequest,
                             ResumeResponse};
 use futures::Future;
 use uuid::Uuid;
@@ -536,77 +536,6 @@ mod tests {
         let r_ha = "0.0.0.0:".to_string() + &format!("{}", s1.heartbeat_port);
         assert_eq!(sa, r_sa.parse().unwrap());
         assert_eq!(ha, r_ha.parse().unwrap());
-    }
-
-    #[test]
-    fn test_service_data() {
-        let mut sd = ServiceData::default();
-        let addr1 = "0.0.0.0:1".parse().unwrap();
-        let addr2 = "0.0.0.0:2".parse().unwrap();
-        let addr3 = "0.0.0.0:3".parse().unwrap();
-        let addr4 = "0.0.0.0:4".parse().unwrap();
-
-        let gen_service =
-            |id: u64, addr: SocketAddr| Service::new(ServiceId(id), addr, Uuid::new_v4());
-        let s1 = gen_service(1, addr1);
-        let s2 = gen_service(1, addr2);
-        sd.insert(s1);
-        sd.insert(s2);
-        sd.insert(gen_service(2, addr3));
-        sd.insert(gen_service(3, addr4));
-
-        {
-            let v = sd.services.get_vec(&ServiceId(1)).unwrap();
-            assert_eq!(v, &vec![s1, s2]);
-        }
-
-        let b1 = sd.borrow(ServiceId(1));
-        let b2 = sd.borrow(ServiceId(4));
-        assert!(b1.is_some());
-        assert!(b2.is_none());
-        {
-            let v = sd.services.get_vec(&ServiceId(1)).unwrap();
-            assert!(v[0].borrowed);
-        }
-
-        let b3 = sd.borrow(ServiceId(1));
-        assert!(b3.is_some());
-        {
-            let v = sd.services.get_vec(&ServiceId(1)).unwrap();
-            assert!(v[1].borrowed);
-        }
-
-
-        let b1 = b1.unwrap();
-        sd.giveback(ServiceId(1), b1);
-        {
-            let v = sd.services.get_vec(&ServiceId(1)).unwrap();
-            assert!(!v[0].borrowed);
-        }
-
-        sd.remove(s1.uuid);
-        {
-            let v = sd.services.get_vec(&ServiceId(1)).unwrap();
-            assert_eq!(v.len(), 1);
-            assert_eq!(v[0].addr, addr2);
-            assert!(v[0].borrowed);
-        }
-
-        let b3 = b3.unwrap();
-        sd.giveback(ServiceId(1), b3);
-        {
-            let v = sd.services.get_vec(&ServiceId(1)).unwrap();
-            assert!(!v[0].borrowed);
-        }
-
-        {
-            let addr = "127.0.0.1:1000".parse().unwrap();
-            let s = gen_service(4, addr);
-            sd.insert(s);
-            sd.remove(s.uuid);
-            let s = sd.borrow(ServiceId(4));
-            assert!(s.is_none());
-        }
     }
 
     #[test]

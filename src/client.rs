@@ -9,8 +9,8 @@ use protobuf::{Message as ProtoMessage, MessageStatic};
 use mio::{Poll, Registration, SetReadiness, Ready, Token, PollOpt, Events};
 
 use heartbeat::Server;
-use super::register_proto_grpc::*;
-use super::register_proto::*;
+use super::registry_proto_grpc::*;
+use super::registry_proto::*;
 use super::ServiceId;
 
 type RunService = Box<Fn(u16) -> bool + Send + Sync + 'static>;

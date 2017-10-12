@@ -17,8 +17,8 @@ pub mod heartbeat;
 
 pub mod client;
 pub mod server;
-mod register_proto;
-mod register_proto_grpc;
+mod registry_proto;
+mod registry_proto_grpc;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct ServiceId(u64);
