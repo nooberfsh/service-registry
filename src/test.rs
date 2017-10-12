@@ -1,23 +1,3 @@
-pub mod client;
-pub mod server;
-mod register_proto;
-mod register_proto_grpc;
-
-#[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
-pub struct ServiceId(u64);
-
-impl From<usize> for ServiceId {
-    fn from(u: usize) -> Self {
-        ServiceId(u as u64)
-    }
-}
-
-impl From<u64> for ServiceId {
-    fn from(u: u64) -> Self {
-        ServiceId(u)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     extern crate bytes;
