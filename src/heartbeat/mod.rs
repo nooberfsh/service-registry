@@ -1,9 +1,11 @@
 use std::io;
-//
-//pub mod client;
-pub mod server;
-//pub mod heartbeat_proto;
-pub mod hub;
+
+mod server;
+mod hub;
+pub mod heartbeat_proto;
+
+pub use self::server::Server;
+pub use self::hub::{Target, Hub};
 
 #[derive(Debug)]
 pub enum Error {
