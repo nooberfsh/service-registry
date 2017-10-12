@@ -29,8 +29,8 @@ fn handle_bytes<P, Q, T>(
     handle: &Handle,
     handler: Handler<P, Q>,
 ) where
-    P: Message + MessageStatic,
-    Q: Message + MessageStatic,
+    P: MessageStatic,
+    Q: Message,
     T: AsyncWrite + 'static,
 {
     match parse_from_bytes::<P>(&bytes) {
@@ -51,8 +51,8 @@ fn serve<P, Q>(
     listener: TcpListener,
     mut core: Core,
 ) where
-    P: Message + MessageStatic,
-    Q: Message + MessageStatic,
+    P: MessageStatic,
+    Q: Message,
 {
     let handle = core.handle();
     let server = listener
@@ -82,8 +82,8 @@ fn serve<P, Q>(
 
 impl<P, Q> Server<P, Q>
 where
-    P: 'static + Message + MessageStatic,
-    Q: 'static + Message + MessageStatic,
+    P: 'static + MessageStatic,
+    Q: 'static + Message,
 {
     pub fn new<N, F>(n: N, f: F) -> Self
     where

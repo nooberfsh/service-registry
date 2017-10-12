@@ -1,3 +1,6 @@
+#![feature(fnbox)]
+#![feature(conservative_impl_trait)]
+
 #[macro_use]
 extern crate log;
 extern crate futures;
@@ -11,4 +14,4 @@ extern crate protobuf;
 extern crate future_worker;
 
 pub mod heartbeat;
-pub mod registry;
+//pub mod registry;
