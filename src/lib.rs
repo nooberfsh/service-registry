@@ -15,10 +15,10 @@ extern crate future_worker;
 
 pub mod heartbeat;
 
-//pub mod client;
+pub mod client;
 //pub mod server;
-//mod registry_proto;
-//mod registry_proto_grpc;
+mod registry_proto;
+mod registry_proto_grpc;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct ServiceId(u64);

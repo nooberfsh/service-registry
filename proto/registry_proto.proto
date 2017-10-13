@@ -18,13 +18,13 @@ message RegisterResponse {
 	uint64 session_id = 3;
 }
 
-message ResumeRequest {
+message ReRegisterRequest {
 	uint32 heartbeat_port = 1;
 	uint32 service_port = 2;
 	uint64 service_id = 3;
 }
 
-message ResumeResponse {
+message ReRegisterResponse {
 	bool succeed = 1;
 	string msg = 2;
 }
@@ -32,5 +32,5 @@ message ResumeResponse {
 service Register {
 	rpc Register(RegisterRequest) returns (RegisterResponse) {}
 	rpc ReportStatus(StatusRequest) returns (RegisterResponse) {}
-	rpc Resume(ResumeRequest) returns (ResumeResponse) {}
+	rpc ReRegister(ReRegisterRequest) returns (ReRegisterResponse) {}
 }

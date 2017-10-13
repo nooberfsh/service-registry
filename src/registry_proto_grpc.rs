@@ -32,9 +32,9 @@ const METHOD_REGISTER_REPORT_STATUS: ::grpcio::Method<super::registry_proto::Sta
     resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
 };
 
-const METHOD_REGISTER_RESUME: ::grpcio::Method<super::registry_proto::ResumeRequest, super::registry_proto::ResumeResponse> = ::grpcio::Method {
+const METHOD_REGISTER_RE_REGISTER: ::grpcio::Method<super::registry_proto::ReRegisterRequest, super::registry_proto::ReRegisterResponse> = ::grpcio::Method {
     ty: ::grpcio::MethodType::Unary,
-    name: "/register.Register/Resume",
+    name: "/register.Register/ReRegister",
     req_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
     resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
 };
@@ -82,20 +82,20 @@ impl RegisterClient {
         self.report_status_async_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn resume_opt(&self, req: super::registry_proto::ResumeRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::ResumeResponse> {
-        self.client.unary_call(&METHOD_REGISTER_RESUME, req, opt)
+    pub fn re_register_opt(&self, req: super::registry_proto::ReRegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::ReRegisterResponse> {
+        self.client.unary_call(&METHOD_REGISTER_RE_REGISTER, req, opt)
     }
 
-    pub fn resume(&self, req: super::registry_proto::ResumeRequest) -> ::grpcio::Result<super::registry_proto::ResumeResponse> {
-        self.resume_opt(req, ::grpcio::CallOption::default())
+    pub fn re_register(&self, req: super::registry_proto::ReRegisterRequest) -> ::grpcio::Result<super::registry_proto::ReRegisterResponse> {
+        self.re_register_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn resume_async_opt(&self, req: super::registry_proto::ResumeRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ResumeResponse> {
-        self.client.unary_call_async(&METHOD_REGISTER_RESUME, req, opt)
+    pub fn re_register_async_opt(&self, req: super::registry_proto::ReRegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ReRegisterResponse> {
+        self.client.unary_call_async(&METHOD_REGISTER_RE_REGISTER, req, opt)
     }
 
-    pub fn resume_async(&self, req: super::registry_proto::ResumeRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ResumeResponse> {
-        self.resume_async_opt(req, ::grpcio::CallOption::default())
+    pub fn re_register_async(&self, req: super::registry_proto::ReRegisterRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ReRegisterResponse> {
+        self.re_register_async_opt(req, ::grpcio::CallOption::default())
     }
     pub fn spawn<F>(&self, f: F) where F: ::futures::Future<Item = (), Error = ()> + Send + 'static {
         self.client.spawn(f)
@@ -105,7 +105,7 @@ impl RegisterClient {
 pub trait Register {
     fn register(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::RegisterRequest, sink: ::grpcio::UnarySink<super::registry_proto::RegisterResponse>);
     fn report_status(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::StatusRequest, sink: ::grpcio::UnarySink<super::registry_proto::RegisterResponse>);
-    fn resume(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::ResumeRequest, sink: ::grpcio::UnarySink<super::registry_proto::ResumeResponse>);
+    fn re_register(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::ReRegisterRequest, sink: ::grpcio::UnarySink<super::registry_proto::ReRegisterResponse>);
 }
 
 pub fn create_register<S: Register + Send + Clone + 'static>(s: S) -> ::grpcio::Service {
@@ -119,8 +119,8 @@ pub fn create_register<S: Register + Send + Clone + 'static>(s: S) -> ::grpcio::
         instance.report_status(ctx, req, resp)
     });
     let instance = s.clone();
-    builder = builder.add_unary_handler(&METHOD_REGISTER_RESUME, move |ctx, req, resp| {
-        instance.resume(ctx, req, resp)
+    builder = builder.add_unary_handler(&METHOD_REGISTER_RE_REGISTER, move |ctx, req, resp| {
+        instance.re_register(ctx, req, resp)
     });
     builder.build()
 }
