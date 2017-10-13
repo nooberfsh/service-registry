@@ -62,7 +62,7 @@ fn serve<P, Q>(
                 .into_future()
                 .map_err(|(e, _)| warn!("framed: {:?}", e))
                 .map(|(bytes, framed)| match bytes {
-                    Some(bytes) => handle_bytes(bytes, framed, &handle, handler.clone()),
+                    Some(bytes) => handle_bytes(bytes, framed, &handle, Arc::clone(handler)),
                     None => warn!("closed by client"),
                 })
                 .then(|_| Ok(())) // always return Ok(()) to prevent server shutdown

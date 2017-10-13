@@ -1,10 +1,11 @@
 extern crate bytes;
 extern crate env_logger;
+extern crate future_worker;
 
 use std::thread;
 use std::time::{Duration, Instant};
 use std::net::{TcpStream, SocketAddr, SocketAddrV4};
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -13,26 +14,40 @@ use bytes::{BigEndian, ByteOrder};
 use protobuf::stream::CodedOutputStream;
 use protobuf::core::parse_from_bytes;
 use protobuf::Message;
+use future_worker::{Runner, FutureWorker};
 
-use super::*;
-use worker;
+use super::{Error, Server, Hub, Target};
+use super::heartbeat_proto::*;
 
-type TestServer = server::Server<HeartbeatRequest, HeartbeatResponse>;
+type TestServer = Server<HeartbeatRequest, HeartbeatResponse>;
+
+pub fn simple_heartbeat_request() -> HeartbeatRequest {
+    let mut req = HeartbeatRequest::new();
+    req.set_msg(1);
+    req
+}
+
+pub fn simple_heartbeat_response() -> HeartbeatResponse {
+    let mut rsp = HeartbeatResponse::new();
+    rsp.set_msg(1);
+    rsp
+}
 
 fn create_server<N: Into<String>>(n: N) -> TestServer {
-    server::Server::<HeartbeatRequest, HeartbeatResponse>::new(n, |_| default_hearbeat_response())
+    Server::<HeartbeatRequest, HeartbeatResponse>::new(n, |_| simple_heartbeat_response())
 }
 
 #[test]
 fn test_server() {
-    let _ = env_logger::init();
-
-    let mut server = create_server("test-server");
+    let mut server = create_server("test_server");
     server.start(10000).unwrap();
 
     // when server was started, then call start will return Error;
     server.start(10000).unwrap_err();
     server.start(1).unwrap_err();
+
+    let mut server2 = create_server("test_server");
+    server2.start(10000).unwrap_err();
 
     //wait for server thread to fully start up;
     thread::sleep(Duration::from_millis(100));
@@ -40,7 +55,7 @@ fn test_server() {
     let addr: SocketAddr = "127.0.0.1:10000".parse().unwrap();
     let mut socket = TcpStream::connect(addr.clone()).unwrap();
 
-    let request = default_hearbeat_request();
+    let request = simple_heartbeat_request();
     let size = request.compute_size();
     // 4 bytes for tokio_io frame header;
     let mut v = vec![0; (4 + size) as usize];
@@ -48,7 +63,7 @@ fn test_server() {
     BigEndian::write_u32(&mut v[0..4], size);
     {
         let mut output = CodedOutputStream::bytes(&mut v[4..]);
-        request.write_to(&mut output).unwrap(); // TODO error handle;
+        request.write_to(&mut output).unwrap();
     }
 
     socket.write_all(&v).unwrap();
@@ -56,7 +71,7 @@ fn test_server() {
     socket.read_to_end(&mut v2).unwrap();
 
     let response: HeartbeatResponse = parse_from_bytes(&v2[4..]).unwrap();
-    assert_eq!(response, default_hearbeat_response());
+    assert_eq!(response, simple_heartbeat_response());
 
     // send no data;
     {
@@ -92,145 +107,168 @@ fn test_server() {
 }
 
 #[test]
-fn test_client_runner() {
-    let _ = env_logger::init();
-    let mut server = create_server("test-server");
-    server.start(10003).unwrap();
-    //wait for server thread to fully start up;
-    thread::sleep(Duration::from_millis(100));
+fn test_hub_target_construct() {
+    let addr = "127.0.0.1:10002".parse().unwrap();
+    let interval = Duration::from_secs(1);
+    let timeout = Duration::from_secs(1);
+    let simple = simple_heartbeat_request();
+    let zero = HeartbeatRequest::new();
 
-    let mut worker = worker::Worker::new("test-worker");
-    worker.start(client::HeartbeatRunner);
-
-    let addr: SocketAddr = "127.0.0.1:10003".parse().unwrap();
-    let request = default_hearbeat_request();
-    let v = request.write_to_bytes().unwrap();
-    let (tx, rx) = channel();
-    let sender = tx.clone();
-    let f = move |rsp: io::Result<Vec<u8>>| {
-        let response: HeartbeatResponse = parse_from_bytes(&rsp.unwrap()).unwrap();
-        assert_eq!(response, default_hearbeat_response());
-        sender.send(()).unwrap();
-    };
-    worker.schedule(client::HeartbeatTask::new(addr.clone(), v.clone(), None, f));
-    rx.recv().unwrap();
-
-    // send multiple request
-    let count = 32;
-    let sum = Arc::new(AtomicUsize::new(0));
-    for _ in 0..count {
-        let sender = tx.clone();
-        let tmp = sum.clone();
-        let f = move |rsp: io::Result<Vec<u8>>| {
-            tmp.fetch_add(1, Ordering::SeqCst);
-            let response: HeartbeatResponse = parse_from_bytes(&rsp.unwrap()).unwrap();
-            assert_eq!(response, default_hearbeat_response());
-            sender.send(()).unwrap();
-        };
-        worker.schedule(client::HeartbeatTask::new(addr.clone(), v.clone(), None, f));
-    }
-    for _ in 0..count {
-        rx.recv().unwrap();
-    }
-    assert_eq!(count, sum.load(Ordering::SeqCst));
-
-
-    let now = Instant::now();
-    let count = 4;
-    for i in 0..count {
-        let sender = tx.clone();
-        let f = move |rsp: io::Result<Vec<u8>>| {
-            let response: HeartbeatResponse = parse_from_bytes(&rsp.unwrap()).unwrap();
-            assert_eq!(response, default_hearbeat_response());
-            sender.send(()).unwrap();
-        };
-        let delay = Duration::from_millis(50 * i);
-        worker.schedule(client::HeartbeatTask::new(
-            addr.clone(),
-            v.clone(),
-            Some(delay),
-            f,
-        ));
-    }
-    for _ in 0..count {
-        rx.recv().unwrap();
-    }
-    info!("elapsed: {:?}", now.elapsed());
-    assert!(now.elapsed() > Duration::from_millis(150));
-    assert!(now.elapsed() < Duration::from_millis(200));
-}
-
-#[test]
-#[should_panic]
-fn test_client_same_port() {
-    let _ = env_logger::init();
-    let mut s1 = create_server("test_server1");
-    s1.start(10001).unwrap();
-    let mut s2 = create_server("test-server2");
-    s2.start(10001).unwrap();
-}
-
-#[test]
-fn test_client_mix() {
-    let _ = env_logger::init();
-    //start 3 servers;
-    // heartbeat_port
-    let ports = [18001, 18002, 18003];
-    let mut servers = ports
-        .iter()
-        .map(|&port| {
-            let mut server = create_server("test-server".to_string() + &format!("{}", port));
-            server.start(port).unwrap();
-            server
-        })
-        .collect::<Vec<_>>();
-
-    //wait for server thread to fully start up;
-    thread::sleep(Duration::from_millis(100));
-
-    let succeed_count = Arc::new(AtomicUsize::new(0));
-    let failed_count = Arc::new(AtomicUsize::new(0));
-    let tmp_succeed = succeed_count.clone();
-    let tmp_failed = failed_count.clone();
-    let interval = Duration::from_millis(50);
-    let mut client = client::Client::<HeartbeatRequest, HeartbeatResponse>::new(
-        "test-client",
+    let target = Target::<HeartbeatRequest, HeartbeatResponse>::new(
+        &addr,
         interval,
-        move |id, rsp| match rsp {
-            Ok(rsp) => {
-                assert_eq!(rsp, default_hearbeat_response());
-                trace!("accept rsp from {:?} succeed", id);
-                tmp_succeed.fetch_add(1, Ordering::SeqCst);
-            }
-            Err(e) => {
-                trace!("accept rsp from {:?} failed, reaseon: {:?}", id, e);
-                tmp_failed.fetch_add(1, Ordering::SeqCst);
-            }
-        },
+        timeout,
+        simple,
+        |_, _| {},
     );
-    client.start(default_hearbeat_request());
+    assert!(target.is_ok());
 
-    for port in &ports {
-        let addr = SocketAddr::V4(SocketAddrV4::new("127.0.0.1".parse().unwrap(), *port));
-        let _ = client.add_service(addr);
+    let target = Target::<HeartbeatRequest, HeartbeatResponse>::new(
+        &addr,
+        interval,
+        timeout,
+        zero,
+        |_, _| {},
+    ).unwrap_err();
+    assert!(target.is_zero_payload());
+}
+
+#[test]
+fn test_hub_interval() {
+    let port = 10004;
+    let mut server = create_server("test_hub_interval");
+    server.start(port).unwrap();
+
+    //wait for server thread to fully start up;
+    thread::sleep(Duration::from_millis(10));
+
+    let start = Instant::now();
+    let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
+        .parse()
+        .unwrap();
+    let interval = Duration::from_millis(50);
+    let timeout = Duration::from_millis(20);
+
+    let hub = Hub::<HeartbeatRequest, HeartbeatResponse>::new();
+    let (tx, rx) = mpsc::channel();
+    let target = Target::new(
+        &addr,
+        interval,
+        timeout,
+        simple_heartbeat_request(),
+        move |uuid, res| { tx.send((uuid, res)).unwrap(); },
+    ).unwrap();
+    let id = hub.add_target(target);
+    let mut count = 0;
+    while count < 6 {
+        let (uuid, res) = rx.recv().unwrap();
+        assert_eq!(id, uuid);
+        assert_eq!(res.unwrap(), simple_heartbeat_response());
+        count += 1;
+    }
+    assert!(start.elapsed() > Duration::from_millis(250));
+    assert!(start.elapsed() < Duration::from_millis(280));
+}
+
+#[test]
+fn test_hub_timeout() {
+    let port = 10006;
+    let mut server = Server::<HeartbeatRequest, HeartbeatResponse>::new("test_hub_timeout", |_| {
+        thread::sleep(Duration::from_millis(100));
+        simple_heartbeat_response()
+    });
+    server.start(port).unwrap();
+
+    let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
+        .parse()
+        .unwrap();
+    let interval = Duration::from_millis(50);
+    let hub = Hub::<HeartbeatRequest, HeartbeatResponse>::new();
+    let (tx, rx) = mpsc::channel();
+
+    //timeout happen.
+    {
+        let start = Instant::now();
+        let timeout_short = Duration::from_millis(50);
+        let tx_short = tx.clone();
+        let target_short = Target::new(
+            &addr,
+            interval,
+            timeout_short,
+            simple_heartbeat_request(),
+            move |uuid, res| { tx_short.send((uuid, res)).unwrap(); },
+        ).unwrap();
+        let uuid = hub.add_target(target_short);
+        let (id, res) = rx.recv().unwrap();
+        assert_eq!(uuid, id);
+        assert!(res.unwrap_err().is_timeout());
+        assert!(start.elapsed() >= Duration::from_millis(50));
+        assert!(start.elapsed() < Duration::from_millis(60));
     }
 
-    thread::sleep(Duration::from_millis(300));
+    //wait for server to finish the request
+    thread::sleep(Duration::from_millis(50));
 
-    assert!(succeed_count.load(Ordering::SeqCst) >= 15);
-    assert!(succeed_count.load(Ordering::SeqCst) <= 18);
+    //no timeout
+    {
+        let start = Instant::now();
+        let timeout_long = Duration::from_millis(200);
+        let tx_long = tx.clone();
+        let target_long = Target::new(
+            &addr,
+            interval,
+            timeout_long,
+            simple_heartbeat_request(),
+            move |uuid, res| { tx_long.send((uuid, res)).unwrap(); },
+        ).unwrap();
+        let uuid = hub.add_target(target_long);
+        let (id, res) = rx.recv().unwrap();
+        assert_eq!(uuid, id);
+        assert_eq!(res.unwrap(), simple_heartbeat_response());
+        assert!(start.elapsed() >= Duration::from_millis(100));
+        assert!(start.elapsed() < Duration::from_millis(110));
+    }
+}
 
-    servers.pop();
-    servers.pop();
+#[test]
+fn test_remove_target() {
+    let port = 10008;
+    let mut server = create_server("test_hub_interval");
+    server.start(port).unwrap();
 
-    succeed_count.store(0, Ordering::SeqCst);
-    thread::sleep(Duration::from_millis(60));
-    assert_eq!(failed_count.load(Ordering::SeqCst), 2);
+    //wait for server thread to fully start up;
+    thread::sleep(Duration::from_millis(10));
 
-    assert!(succeed_count.load(Ordering::SeqCst) >= 1);
-    assert!(succeed_count.load(Ordering::SeqCst) <= 3);
+    let start = Instant::now();
+    let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
+        .parse()
+        .unwrap();
+    let interval = Duration::from_millis(50);
+    let timeout = Duration::from_millis(20);
 
-    servers.pop();
-    thread::sleep(Duration::from_millis(60));
-    assert_eq!(failed_count.load(Ordering::SeqCst), 3);
+    let hub = Hub::<HeartbeatRequest, HeartbeatResponse>::new();
+    let (tx, rx) = mpsc::channel();
+    let target = Target::new(
+        &addr,
+        interval,
+        timeout,
+        simple_heartbeat_request(),
+        move |uuid, res| { tx.send((uuid, res)).unwrap(); },
+    ).unwrap();
+    let id = hub.add_target(target);
+
+    let (uuid, res) = rx.recv().unwrap();
+    assert_eq!(id, uuid);
+    assert_eq!(res.unwrap(), simple_heartbeat_response());
+
+    let (uuid, res) = rx.recv().unwrap();
+    assert_eq!(id, uuid);
+    assert_eq!(res.unwrap(), simple_heartbeat_response());
+
+    let target = hub.remove_target(id).unwrap();
+    assert_eq!(id, target.get_id());
+
+    let e = rx.recv_timeout(interval + Duration::from_millis(20))
+        .unwrap_err();
+    assert_eq!(e, RecvTimeoutError::Timeout);
 }

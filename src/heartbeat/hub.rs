@@ -19,6 +19,7 @@ use uuid::Uuid;
 use future_worker::{Runner, FutureWorker, Scheduler};
 
 use super::Error;
+use super::timer::{Timer, TimerHandle};
 
 pub struct Target<P, Q> {
     addr: SocketAddr,
@@ -67,11 +68,14 @@ where
         })
     }
 
+    pub fn get_id(&self) -> Uuid {
+        self.uuid
+    }
+
     fn gen_task(&self) -> HeartbeatTask {
         HeartbeatTask {
             addr: self.addr,
             uuid: self.uuid,
-            delay: self.interval,
             timeout: self.timeout,
             payload: self.payload.clone(),
         }
@@ -87,7 +91,6 @@ impl<P, Q> fmt::Debug for Target<P, Q> {
 struct HeartbeatTask {
     addr: SocketAddr,
     uuid: Uuid,
-    delay: Duration,
     timeout: Duration,
     payload: Vec<u8>,
 }
@@ -106,37 +109,38 @@ where
         handle: &Handle,
     ) -> impl Future<Item = Q, Error = Error> {
         let payload = task.payload.into();
-        let base = TcpStream::connect(&task.addr, handle).and_then(move |stream| {
-            let frame = Framed::new(stream);
-            frame.send(payload).and_then(move |stream: Framed<_>| {
-                stream.into_future().map_err(|(e, _)| e).and_then(
-                    |(item, _)| {
-                        item.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "closed by server"))
-                    },
-                )
+        let base = TcpStream::connect(&task.addr, handle)
+            .and_then(move |stream| {
+                let frame = Framed::new(stream);
+                frame.send(payload)
             })
-        });
+            .and_then(move |stream: Framed<_>| {
+                stream.into_future().map_err(|(e, _)| e)
+            })
+            .and_then(|(item, _)| {
+                item.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "closed by server"))
+            })
+            .and_then(|r| parse_from_bytes::<Q>(&r).map_err(From::from));
 
-        let delay = Timeout::new(task.delay, handle).unwrap().then(|_| base);
-        let parse = delay.and_then(|r| parse_from_bytes::<Q>(&r).map_err(From::from));
-        let timeout = Timeout::new(task.timeout, handle).unwrap();
-
-        timeout.select2(parse).then(|r| {
-            match r {
-                Ok(r) => {
-                    match r {
-                        Either::A(_) => Err(Error::Timeout),
-                        Either::B((q, _)) => Ok(q),
+        Timeout::new(task.timeout, handle)
+            .unwrap()
+            .select2(base)
+            .then(|r| {
+                match r {
+                    Ok(r) => {
+                        match r {
+                            Either::A(_) => Err(Error::Timeout),
+                            Either::B((q, _)) => Ok(q),
+                        }
+                    }
+                    Err(e) => {
+                        match e {
+                            Either::A(_) => unreachable!(), // poll of Timeout never return Err,
+                            Either::B((e, _)) => Err(Error::IoErr(e)),
+                        }
                     }
                 }
-                Err(e) => {
-                    match e {
-                        Either::A(_) => unreachable!(), // poll of Timeout never return Err,
-                        Either::B((e, _)) => Err(Error::IoErr(e)),
-                    }
-                }
-            }
-        })
+            })
     }
 }
 
@@ -147,9 +151,7 @@ where
     fn run(&mut self, task: HeartbeatTask, handle: &Handle) {
         let uuid = task.uuid;
         let sender = self.sender.clone();
-
-        let heartbeat = self.gen_heartbeat_future(task, handle);
-        let f = heartbeat.then(move |r| {
+        let f = self.gen_heartbeat_future(task, handle).then(move |r| {
             let msg = Message::HeartbeatResponse(uuid, r);
             //worker was droped before loop routine, so it is safe to unwrap.
             sender.send(msg).unwrap();
@@ -162,6 +164,7 @@ where
 enum Message<Q> {
     HeartbeatRequest(HeartbeatTask),
     HeartbeatResponse(Uuid, Result<Q, Error>),
+    WakeupTarget(Uuid),
     Stop,
 }
 
@@ -171,6 +174,7 @@ pub struct Hub<P, Q> {
     targets: Targets<P, Q>,
     sender: Sender<Message<Q>>,
     worker: Option<FutureWorker<HeartbeatTask>>,
+    timer: Option<Timer>,
     thread_handle: Option<JoinHandle<()>>,
 }
 
@@ -179,6 +183,7 @@ struct Inner<P, Q> {
     sender: Sender<Message<Q>>,
     receiver: Receiver<Message<Q>>,
     scheduler: Scheduler<HeartbeatTask>,
+    timer_handle: TimerHandle,
 }
 
 impl<P, Q> Hub<P, Q>
@@ -194,10 +199,14 @@ where
         );
         let scheduler = worker.get_scheduler();
 
+        let timer = Timer::new("hub_timer");
+        let timer_handle = timer.get_handle();
+
         let mut hub = Hub {
             targets: Arc::new(Mutex::new(HashMap::new())),
             sender: tx,
             worker: Some(worker),
+            timer: Some(timer),
             thread_handle: None,
         };
 
@@ -206,6 +215,7 @@ where
             sender: hub.sender.clone(),
             receiver: rx,
             scheduler: scheduler,
+            timer_handle: timer_handle,
         };
 
         let thread_handle = thread::Builder::new()
@@ -227,9 +237,9 @@ where
         uuid
     }
 
-    pub fn remove_target(&self, id: Uuid) {
+    pub fn remove_target(&self, id: Uuid) -> Option<Target<P, Q>> {
         let mut targets = self.targets.lock().unwrap();
-        targets.remove(&id);
+        targets.remove(&id)
     }
 
     fn begin_loop(inner: Inner<P, Q>) {
@@ -247,13 +257,27 @@ where
                         let is_ok = res.is_ok();
                         (target.cb)(uuid, res);
                         if is_ok {
-                            let task = target.gen_task();
-                            let msg = Message::HeartbeatRequest(task);
-                            inner.sender.send(msg).unwrap();
+                            let sender = inner.sender.clone();
+                            let f = move || {
+                                let msg = Message::WakeupTarget(uuid);
+                                sender.send(msg).unwrap();
+                            };
+                            if inner.timer_handle.timeout(target.interval, f).is_err() {
+                                info!("detect worker scheduler stoped");
+                                break;
+                            }
                             targets.insert(uuid, target);
                         } else {
                             warn!("heartbeat to {:?} failed!, remove target", target);
                         }
+                    }
+                }
+                Message::WakeupTarget(uuid) => {
+                    let targets = inner.targets.lock().unwrap();
+                    if let Some(target) = targets.get(&uuid) {
+                        let task = target.gen_task();
+                        let msg = Message::HeartbeatRequest(task);
+                        inner.sender.send(msg).unwrap();
                     }
                 }
                 Message::Stop => break,
@@ -276,6 +300,9 @@ impl<P, Q> Drop for Hub<P, Q> {
     fn drop(&mut self) {
         //drop worker first.
         self.worker.take().unwrap();
+
+        //drop timer
+        self.timer.take().unwrap();
 
         //exit loop routine;
         self.sender.send(Message::Stop).unwrap();
