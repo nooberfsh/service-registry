@@ -18,8 +18,8 @@ use std::net::{SocketAddr, IpAddr};
 pub mod heartbeat;
 
 pub mod container;
+pub mod registry;
 mod rpc_server;
-//pub mod server;
 mod registry_proto;
 mod registry_proto_grpc;
 
@@ -55,6 +55,5 @@ impl Service {
     }
 }
 
-
-//#[cfg(test)]
-//mod test;
+#[cfg(test)]
+mod test;
