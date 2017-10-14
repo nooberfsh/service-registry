@@ -51,7 +51,7 @@ impl Meta {
     }
 }
 
-pub struct Client<P, Q, E: Executor>
+pub struct Container<P, Q, E: Executor>
 where
     P: MessageStatic,
     Q: ProtoMessage,
@@ -77,8 +77,6 @@ where
 struct Inner {
     heartbeat_set_readiness: SetReadiness,
     env: Arc<Environment>,
-
-    heartbeat_interval: Duration,
     service_port: u16,
     heartbeat_port: u16,
     service_id: ServiceId,
@@ -129,7 +127,7 @@ pub trait Executor {
     fn stop(&mut self) {}
 }
 
-impl<P, Q, E> Client<P, Q, E>
+impl<P, Q, E> Container<P, Q, E>
 where
     P: MessageStatic,
     Q: ProtoMessage,
@@ -146,7 +144,7 @@ where
             tmp.set_readiness(Ready::readable()).unwrap();
             gen_rsp(req)
         };
-        Client {
+        Container {
             heartbeat_server: HeartbeatServer::new("heartbeat_server", f),
             rpc_env: Arc::new(EnvBuilder::new().build()),
             thread_handle: None,
@@ -198,7 +196,7 @@ where
         ).unwrap();
     }
 
-    fn init(&mut self) -> Result<(), ConnectFailed> {
+    fn register_and_run(&mut self) -> Result<(), ConnectFailed> {
         let rsp = self.register_service()?;
         let mut service_port = rsp.service_port as u16;
         let mut heartbeat_port = rsp.heartbeat_port as u16;
@@ -227,7 +225,6 @@ where
             heartbeat_set_readiness: self.heartbeat_set_readiness.clone(),
             env: Arc::clone(&self.rpc_env),
 
-            heartbeat_interval: self.config.heartbeat_interval,
             service_port: self.meta.service_port.unwrap(),
             heartbeat_port: self.meta.heartbeat_port.unwrap(),
             config: self.config.clone(),
@@ -236,14 +233,14 @@ where
     }
 
     pub fn start(&mut self) -> Result<(), ConnectFailed> {
-        self.init()?;
+        self.register_and_run()?;
 
         let poll = Poll::new().unwrap();
         self.register_registration(&poll);
         let inner = self.inner();
 
         let handle = thread::Builder::new()
-            .name("registry_client".to_string())
+            .name("container".to_string())
             .spawn(move || Self::begin_loop(poll, inner))
             .unwrap();
         self.thread_handle = Some(handle);
@@ -253,7 +250,7 @@ where
     fn begin_loop(poll: Poll, inner: Inner) {
         let mut events = Events::with_capacity(4);
         loop {
-            let num = poll.poll(&mut events, Some(inner.heartbeat_interval))
+            let num = poll.poll(&mut events, Some(inner.config.heartbeat_interval))
                 .unwrap();
             if num == 0 {
                 //indicate registry server did not touch us for heartbeat_interval time
@@ -289,7 +286,7 @@ where
     }
 }
 
-impl<P, Q, E> Drop for Client<P, Q, E>
+impl<P, Q, E> Drop for Container<P, Q, E>
 where
     P: MessageStatic,
     Q: ProtoMessage,
