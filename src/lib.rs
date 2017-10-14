@@ -15,7 +15,7 @@ extern crate future_worker;
 
 pub mod heartbeat;
 
-pub mod client;
+pub mod container;
 //pub mod server;
 mod registry_proto;
 mod registry_proto_grpc;

@@ -256,7 +256,7 @@ where
             let num = poll.poll(&mut events, Some(inner.heartbeat_interval))
                 .unwrap();
             if num == 0 {
-                //indicate service register server did not touch us for heartbeat_interval time
+                //indicate registry server did not touch us for heartbeat_interval time
                 warn!("lost connection to server, begin to re_register");
                 match inner.re_register() {
                     Ok(rsp) => {
