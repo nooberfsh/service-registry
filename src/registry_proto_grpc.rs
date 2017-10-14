@@ -25,7 +25,7 @@ const METHOD_REGISTER_REGISTER: ::grpcio::Method<super::registry_proto::Register
     resp_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
 };
 
-const METHOD_REGISTER_REPORT_STATUS: ::grpcio::Method<super::registry_proto::StatusRequest, super::registry_proto::RegisterResponse> = ::grpcio::Method {
+const METHOD_REGISTER_REPORT_STATUS: ::grpcio::Method<super::registry_proto::StatusRequest, super::registry_proto::StatusResponse> = ::grpcio::Method {
     ty: ::grpcio::MethodType::Unary,
     name: "/register.Register/ReportStatus",
     req_mar: ::grpcio::Marshaller { ser: ::grpcio::pb_ser, de: ::grpcio::pb_de },
@@ -66,19 +66,19 @@ impl RegisterClient {
         self.register_async_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn report_status_opt(&self, req: super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::RegisterResponse> {
+    pub fn report_status_opt(&self, req: super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::StatusResponse> {
         self.client.unary_call(&METHOD_REGISTER_REPORT_STATUS, req, opt)
     }
 
-    pub fn report_status(&self, req: super::registry_proto::StatusRequest) -> ::grpcio::Result<super::registry_proto::RegisterResponse> {
+    pub fn report_status(&self, req: super::registry_proto::StatusRequest) -> ::grpcio::Result<super::registry_proto::StatusResponse> {
         self.report_status_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn report_status_async_opt(&self, req: super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::RegisterResponse> {
+    pub fn report_status_async_opt(&self, req: super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::StatusResponse> {
         self.client.unary_call_async(&METHOD_REGISTER_REPORT_STATUS, req, opt)
     }
 
-    pub fn report_status_async(&self, req: super::registry_proto::StatusRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::RegisterResponse> {
+    pub fn report_status_async(&self, req: super::registry_proto::StatusRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::StatusResponse> {
         self.report_status_async_opt(req, ::grpcio::CallOption::default())
     }
 
@@ -104,7 +104,7 @@ impl RegisterClient {
 
 pub trait Register {
     fn register(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::RegisterRequest, sink: ::grpcio::UnarySink<super::registry_proto::RegisterResponse>);
-    fn report_status(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::StatusRequest, sink: ::grpcio::UnarySink<super::registry_proto::RegisterResponse>);
+    fn report_status(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::StatusRequest, sink: ::grpcio::UnarySink<super::registry_proto::StatusResponse>);
     fn re_register(&self, ctx: ::grpcio::RpcContext, req: super::registry_proto::ReRegisterRequest, sink: ::grpcio::UnarySink<super::registry_proto::ReRegisterResponse>);
 }
 

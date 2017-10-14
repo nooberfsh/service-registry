@@ -30,6 +30,11 @@ impl Meta {
         }
     }
 
+    fn clean(&mut self) {
+        self.service_port = None;
+        self.heartbeat_port = None;
+    }
+
     fn set_service_port(&mut self, port: u16) {
         self.service_port = Some(port);
     }
@@ -84,7 +89,7 @@ struct Inner {
 }
 
 impl Inner {
-    fn re_register(&self) -> Result<ReRegisterResponse, Error> {
+    fn re_register(&self) -> Result<ReRegisterResponse, RpcError> {
         let mut req = ReRegisterRequest::new();
         req.heartbeat_port = u32::from(self.heartbeat_port);
         req.service_port = u32::from(self.service_port);
@@ -93,16 +98,19 @@ impl Inner {
         let addr = format!("{}", self.config.server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.env)).connect(&addr);
         let client = RegisterClient::new(ch);
-        client.re_register(req)
+        client.re_register(req).map_err(From::from)
     }
 }
 
 #[derive(Debug)]
-pub struct ConnectFailed(Error);
+pub enum RpcError {
+    RpcErr(Error),
+    ServerCrashed,
+}
 
-impl From<Error> for ConnectFailed {
+impl From<Error> for RpcError {
     fn from(e: Error) -> Self {
-        ConnectFailed(e)
+        RpcError::RpcErr(e)
     }
 }
 
@@ -160,16 +168,16 @@ where
         }
     }
 
-    fn register_service(&self) -> Result<RegisterResponse, Error> {
+    fn register_service(&self) -> Result<RegisterResponse, RpcError> {
         let addr = format!("{}", self.config.server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.rpc_env)).connect(&addr);
         let client = RegisterClient::new(ch);
         let mut req = RegisterRequest::new();
         req.set_service_id(self.executor.service_id().0);
-        client.register(req)
+        client.register(req).map_err(|e| e.into())
     }
 
-    fn report_status(&self, session_id: u64) -> Result<RegisterResponse, Error> {
+    fn report_status(&self, session_id: u64) -> Result<StatusResponse, RpcError> {
         let mut req = StatusRequest::new();
         req.service_succeed = self.meta.has_service_port();
         req.heartbeat_succeed = self.meta.has_heartbeat_port();
@@ -178,7 +186,7 @@ where
         let addr = format!("{}", self.config.server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.rpc_env)).connect(&addr);
         let client = RegisterClient::new(ch);
-        client.report_status(req)
+        client.report_status(req).map_err(|e| e.into())
     }
 
     fn register_registration(&mut self, poll: &Poll) {
@@ -196,7 +204,7 @@ where
         ).unwrap();
     }
 
-    fn register_and_run(&mut self) -> Result<(), ConnectFailed> {
+    fn register_and_run(&mut self) -> Result<(), RpcError> {
         let rsp = self.register_service()?;
         let mut service_port = rsp.service_port as u16;
         let mut heartbeat_port = rsp.heartbeat_port as u16;
@@ -212,7 +220,23 @@ where
                 self.meta.set_heartbeat_port(heartbeat_port);
             }
 
-            let status_rsp = self.report_status(rsp.session_id)?;
+            let status_rsp = self.report_status(rsp.session_id)
+                .and_then(|rsp| {
+                    if rsp.succeed {
+                        Ok(rsp)
+                    } else {
+                        //indicate server crashed before we report our status,
+                        Err(RpcError::ServerCrashed)
+                    }
+                })
+                .map_err(|e| {
+                    //reset state;
+                    if self.meta.has_service_port() {
+                        self.executor.stop();
+                    }
+                    self.meta.clean();
+                    e
+                })?;
 
             service_port = status_rsp.service_port as u16;
             heartbeat_port = status_rsp.heartbeat_port as u16;
@@ -232,7 +256,7 @@ where
         }
     }
 
-    pub fn start(&mut self) -> Result<(), ConnectFailed> {
+    pub fn start(&mut self) -> Result<(), RpcError> {
         self.register_and_run()?;
 
         let poll = Poll::new().unwrap();

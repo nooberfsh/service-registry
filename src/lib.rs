@@ -13,9 +13,12 @@ extern crate grpcio;
 extern crate protobuf;
 extern crate future_worker;
 
+use std::net::{SocketAddr, IpAddr};
+
 pub mod heartbeat;
 
 pub mod container;
+mod rpc_server;
 //pub mod server;
 mod registry_proto;
 mod registry_proto_grpc;
@@ -34,6 +37,24 @@ impl From<u64> for ServiceId {
         ServiceId(u)
     }
 }
+
+struct Service {
+    sid: ServiceId,
+    host: IpAddr,
+    service_port: u16,
+    heartbeat_port: u16,
+}
+
+impl Service {
+    fn service_addr(&self) -> SocketAddr {
+        SocketAddr::new(self.host, self.service_port)
+    }
+
+    fn heartbeat_addr(&self) -> SocketAddr {
+        SocketAddr::new(self.host, self.heartbeat_port)
+    }
+}
+
 
 //#[cfg(test)]
 //mod test;

@@ -6,16 +6,23 @@ message RegisterRequest {
 	uint64 service_id = 1;
 }
 
+message RegisterResponse {
+	uint32 heartbeat_port = 1;
+	uint32 service_port = 2;
+	uint64 session_id = 3;
+}
+
 message StatusRequest {
 	bool heartbeat_succeed = 1;
 	bool service_succeed = 2;
 	uint64 session_id = 3;
 }
 
-message RegisterResponse {
-	uint32 heartbeat_port = 1;
-	uint32 service_port = 2;
-	uint64 session_id = 3;
+message StatusResponse {
+	bool succeed = 1;
+	uint32 heartbeat_port = 2;
+	uint32 service_port = 3;
+	uint64 session_id = 4;
 }
 
 message ReRegisterRequest {
@@ -31,6 +38,6 @@ message ReRegisterResponse {
 
 service Register {
 	rpc Register(RegisterRequest) returns (RegisterResponse) {}
-	rpc ReportStatus(StatusRequest) returns (RegisterResponse) {}
+	rpc ReportStatus(StatusRequest) returns (StatusResponse) {}
 	rpc ReRegister(ReRegisterRequest) returns (ReRegisterResponse) {}
 }
