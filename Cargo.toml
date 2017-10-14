@@ -17,7 +17,7 @@ grpcio = "0.1"
 version = "0.5"
 features = ["v4"]
 
-[dependencies.future-worker]
+[dependencies.worker]
 git = "http://gitlab.tanjiavr.com/tom/future-worker.git"
 
 [dev-dependencies]

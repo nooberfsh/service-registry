@@ -1,22 +1,19 @@
 extern crate bytes;
 extern crate env_logger;
-extern crate future_worker;
+extern crate worker;
 
 use std::thread;
 use std::time::{Duration, Instant};
-use std::net::{TcpStream, SocketAddr, SocketAddrV4};
+use std::net::{TcpStream, SocketAddr};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::io::{self, Read, Write};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::io::{Read, Write};
 
 use bytes::{BigEndian, ByteOrder};
 use protobuf::stream::CodedOutputStream;
 use protobuf::core::parse_from_bytes;
 use protobuf::Message;
-use future_worker::{Runner, FutureWorker};
 
-use super::{Error, Server, Hub, Target};
+use super::{Server, Hub, Target};
 use super::heartbeat_proto::*;
 
 type TestServer = Server<HeartbeatRequest, HeartbeatResponse>;
@@ -239,7 +236,6 @@ fn test_remove_target() {
     //wait for server thread to fully start up;
     thread::sleep(Duration::from_millis(10));
 
-    let start = Instant::now();
     let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
         .parse()
         .unwrap();

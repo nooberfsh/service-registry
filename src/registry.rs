@@ -8,7 +8,6 @@ use std::sync::mpsc::{self, Sender, Receiver};
 use std::time::Duration;
 use std::marker::PhantomData;
 
-use grpcio::{Environment, RpcContext, ServerBuilder, UnarySink, Server as GrpcServer};
 use protobuf::{Message as ProtoMessage, MessageStatic};
 use super::registry_proto_grpc::{create_register, Register};
 use super::registry_proto::{RegisterResponse, RegisterRequest, StatusRequest, ResumeRequest,

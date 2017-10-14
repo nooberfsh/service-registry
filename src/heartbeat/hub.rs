@@ -16,7 +16,7 @@ use tokio_io::codec::length_delimited::Framed;
 use protobuf::core::parse_from_bytes;
 use protobuf::{Message as ProtoMessage, MessageStatic};
 use uuid::Uuid;
-use future_worker::{Runner, FutureWorker, Scheduler};
+use worker::{FutureRunner, FutureWorker, FutureScheduler};
 
 use super::Error;
 use super::timer::{Timer, TimerHandle};
@@ -144,7 +144,7 @@ where
     }
 }
 
-impl<Q> Runner<HeartbeatTask> for HeartbeatRunner<Q>
+impl<Q> FutureRunner<HeartbeatTask> for HeartbeatRunner<Q>
 where
     Q: MessageStatic + 'static,
 {
@@ -182,7 +182,7 @@ struct Inner<P, Q> {
     targets: Targets<P, Q>,
     sender: Sender<Message<Q>>,
     receiver: Receiver<Message<Q>>,
-    scheduler: Scheduler<HeartbeatTask>,
+    scheduler: FutureScheduler<HeartbeatTask>,
     timer_handle: TimerHandle,
 }
 

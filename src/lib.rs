@@ -11,14 +11,14 @@ extern crate uuid;
 extern crate mio;
 extern crate grpcio;
 extern crate protobuf;
-extern crate future_worker;
+extern crate worker;
 
 use std::net::{SocketAddr, IpAddr};
 
 pub mod heartbeat;
 
 pub mod container;
-pub mod registry;
+//pub mod registry;
 mod rpc_server;
 mod registry_proto;
 mod registry_proto_grpc;
@@ -55,5 +55,5 @@ impl Service {
     }
 }
 
-#[cfg(test)]
-mod test;
+//#[cfg(test)]
+//mod test;
