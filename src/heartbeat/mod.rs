@@ -6,7 +6,7 @@ mod timer;
 pub mod heartbeat_proto;
 
 pub use self::server::Server;
-pub use self::hub::{Target, Hub};
+pub use self::hub::{Target, Hub, HubHandle};
 
 #[derive(Debug)]
 pub enum Error {

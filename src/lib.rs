@@ -1,5 +1,6 @@
 #![feature(fnbox)]
 #![feature(conservative_impl_trait)]
+#![feature(clone_closures)]
 
 #[macro_use]
 extern crate log;
@@ -17,10 +18,10 @@ use std::net::{SocketAddr, IpAddr};
 use std::time::Duration;
 
 pub mod heartbeat;
-
 pub mod container;
-//pub mod registry;
+pub mod registry;
 pub mod rpc_server;
+
 mod registry_proto;
 mod registry_proto_grpc;
 
@@ -62,7 +63,8 @@ pub struct Config {
     pub service_port_base: u16,
     pub heartbeat_port_base: u16,
     pub heartbeat_interval: Duration,
+    pub heartbeat_timeout: Duration,
 }
 
-//#[cfg(test)]
-//mod test;
+#[cfg(test)]
+mod test;

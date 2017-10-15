@@ -1,4 +1,5 @@
 use std::io;
+use std::thread::{self, JoinHandle};
 use std::net::{IpAddr, SocketAddr};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -11,9 +12,8 @@ use grpcio::{RpcContext, UnarySink, Error as GrpcError, Server as GrpcServer};
 use futures::Future;
 use uuid::Uuid;
 
-use heartbeat::Hub;
-use super::{Service, ServiceId};
-use super::rpc_server;
+use heartbeat::{Hub, HubHandle};
+use super::{Service, ServiceId, rpc_server, Config};
 use super::registry_proto_grpc::{create_register, Register};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -26,7 +26,7 @@ struct ServiceDetail {
 
 impl ServiceDetail {
     fn new(service: &Service, uuid: Uuid) -> Self {
-        Service {
+        ServiceDetail {
             sid: service.sid,
             service_addr: service.service_addr(),
             heartbeat_addr: service.heartbeat_addr(),
@@ -37,53 +37,31 @@ impl ServiceDetail {
 
 type ServiceDetails = Arc<Mutex<HashMap<Uuid, ServiceDetail>>>;
 
-struct RegistryRunner<P, Q>
-where
-    P: ProtoMessage,
-    Q: MessageStatic,
-{
-    services: ServiceDetails,
-    heartbeat_interval: Duration,
-    hub: Hub<P, Q>,
-    service_available_handle: Box<Fn() + Send + 'static>,
-    service_droped_handle: Box<Fn() + Send + 'static>,
-}
-
-impl<P, Q> RegistryRunner<P, Q>
-where
-    P: ProtoMessage,
-    Q: MessageStatic,
-{
-    fn new<F1, F2>(
-        services: ServiceDetails,
-        heartbeat_interval: Duration,
-        service_available_handle: F1,
-        service_droped_handle: F2,
-    ) -> Self {
-        RegistryRunner {
-            services: services,
-            heartbeat_interval: heartbeat_interval,
-            hub: Hub::<P, Q>::new(),
-            service_available_handle: Box::new(service_available_handle),
-            service_droped_handle: Box::new(service_droped_handle),
-        }
-    }
-}
-
-impl<P, Q> GeneralRunner<Message> for RegistryRunner<P, Q> {
-    fn run(&mut self, msg: Message) {
-        unimplemented!()
-    }
-}
-
 pub struct Registry<P, Q>
 where
     P: ProtoMessage,
     Q: MessageStatic,
 {
     services: ServiceDetails,
-    worker: GeneralWorker<Message>,
-    grpc_server: Option<GrcpServer>,
+    sender: Sender<Message>,
+    grpc_server: Option<GrpcServer>,
+    hub: Option<Hub<P, Q>>,
+    thread_handle: Option<JoinHandle<()>>,
+}
+
+struct Inner<P, Q>
+where
+    P: ProtoMessage,
+    Q: MessageStatic,
+{
+    services: ServiceDetails,
+    sender: Sender<Message>,
+    receiver: Receiver<Message>,
+    heartbeat_interval: Duration,
+    heartbeat_timeout: Duration,
+    hub_handle: HubHandle<P, Q>,
+    service_available_handle: Box<Fn(ServiceId, SocketAddr) + Send + 'static>,
+    service_droped_handle: Box<Fn(ServiceId, SocketAddr) + Send + 'static>,
 }
 
 impl<P, Q> Registry<P, Q>
@@ -95,43 +73,94 @@ where
         config: Config,
         service_available_handle: F1,
         service_droped_handle: F2,
-    ) -> Self {
-        let services = Default::default();
-        let runner = RegistryRunner::new(
-            Arc::clone(&services),
-            config.heartbeat_interval,
-            service_available_handle,
-            service_droped_handle,
-        );
-        let worker = GeneralWorker::new("registry_worker", runner);
-        let scheduler = worker.get_scheduler();
-
+    ) -> Result<Self, GrpcError>
+    where
+        F1: Fn(ServiceId, SocketAddr) + Send + 'static,
+        F2: Fn(ServiceId, SocketAddr) + Send + 'static,
+    {
+        let (tx, rx) = mpsc::channel();
+        // create grpc server;
+        // grpc was droped before the loop routine, so it is safe to unwrap.
         let register_handle = {
-            let scheduler = scheduler.clone();
-            move |service| scheduler.schedule(Message::Register(service)).unwrap()  //grpc was droped first, so it is safe to unwrap()
+            let sender = tx.clone();
+            move |service| sender.send(Message::Register(service)).unwrap()
         };
         let re_register_handle = {
-            let scheduler = scheduler.clone();
-            move |service| scheduler.schedule(Message::ReRegister(service)).unwrap()
+            let sender = tx.clone();
+            move |service| sender.send(Message::ReRegister(service)).unwrap()
         };
         let mut grpc_server =
-            rpc_server::create_grpc_server(register_handle, re_register_handle, &config).unwrap(); //TODO: is unwrap() safe here?
+            rpc_server::create_grpc_server(register_handle, re_register_handle, &config)?;
         grpc_server.start();
-        Registry {
+
+        let hub = Hub::new();
+        let services = Default::default();
+        let inner = Inner {
+            services: Arc::clone(&services),
+            sender: tx.clone(),
+            receiver: rx,
+            heartbeat_interval: config.heartbeat_interval,
+            heartbeat_timeout: config.heartbeat_timeout,
+            hub_handle: hub.get_handle(),
+            service_available_handle: Box::new(service_available_handle),
+            service_droped_handle: Box::new(service_droped_handle),
+        };
+
+        let thread_handle = thread::Builder::new()
+            .name("registry_notifier".to_string())
+            .spawn(move || Self::begin_loop(inner))
+            .unwrap();
+
+        Ok(Registry {
             services: services,
-            worker: worker,
+            sender: tx,
             grpc_server: Some(grpc_server),
+            hub: Some(hub),
+            thread_handle: Some(thread_handle),
+        })
+    }
+
+    fn begin_loop(inner: Inner<P, Q>) {
+        loop {
+            match inner.receiver.recv().unwrap() {
+                Message::Register(service) => {}
+                Message::ReRegister(service) => {}
+                Message::HeartbeatFailed(uuid) => {}
+                Message::Stop => break,
+            }
         }
+    }
+
+    fn add_service(service: Service, inner: &Inner<P, Q>) -> bool {
+        /*let saddr = service.service_addr();
+        let lock = inner.services.lock().unwrap();
+        if lock.iter().find(|sd|{
+            sd.service_addr == sadd
+        }).is_some() {
+            return false;
+        }
+        let target = Target::new(&service.heartbeat_addr(), inner.heartbeat_interval, inner.heartbeat_timeout, )*/
+        unimplemented!()
     }
 }
 
-impl<P ,Q> for Registry<P, Q> 
+enum Message {
+    Register(Service),
+    ReRegister(Service),
+    HeartbeatFailed(Uuid),
+    Stop,
+}
+
+impl<P, Q> Drop for Registry<P, Q>
 where
     P: ProtoMessage,
     Q: MessageStatic,
 {
     fn drop(&mut self) {
         self.grpc_server.take().unwrap();
+        self.hub.take().unwrap();
+        self.sender.send(Message::Stop).unwrap();
+        self.thread_handle.take().unwrap().join().unwrap();
     }
 }
 
