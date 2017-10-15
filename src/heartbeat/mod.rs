@@ -15,6 +15,8 @@ pub enum Error {
 
     IoErr(io::Error),
     Timeout,
+
+    Stopped,
 }
 
 impl Error {

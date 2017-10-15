@@ -14,12 +14,13 @@ extern crate protobuf;
 extern crate worker;
 
 use std::net::{SocketAddr, IpAddr};
+use std::time::Duration;
 
 pub mod heartbeat;
 
 pub mod container;
 //pub mod registry;
-mod rpc_server;
+pub mod rpc_server;
 mod registry_proto;
 mod registry_proto_grpc;
 
@@ -38,7 +39,7 @@ impl From<u64> for ServiceId {
     }
 }
 
-struct Service {
+pub struct Service {
     sid: ServiceId,
     host: IpAddr,
     service_port: u16,
@@ -53,6 +54,14 @@ impl Service {
     fn heartbeat_addr(&self) -> SocketAddr {
         SocketAddr::new(self.host, self.heartbeat_port)
     }
+}
+
+#[derive(Clone)]
+pub struct Config {
+    pub server_port: u16,
+    pub service_port_base: u16,
+    pub heartbeat_port_base: u16,
+    pub heartbeat_interval: Duration,
 }
 
 //#[cfg(test)]

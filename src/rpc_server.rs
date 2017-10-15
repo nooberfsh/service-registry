@@ -4,12 +4,13 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::{Arc, Mutex};
 
-use grpcio::{RpcContext, UnarySink};
+use grpcio::{Environment, ServerBuilder, RpcContext, UnarySink, Error as GrpcError,
+             Server as GrpcServer};
 use super::registry_proto_grpc::*;
 use super::registry_proto::*;
 use futures::Future;
 
-use super::{ServiceId, Service};
+use super::{ServiceId, Service, Config};
 
 fn fresh_session_id() -> usize {
     static NEXT_ID: AtomicUsize = ATOMIC_USIZE_INIT;
@@ -73,12 +74,35 @@ impl Session {
 type Sessions = Arc<Mutex<HashMap<SessionId, Session>>>;
 
 #[derive(Clone)]
-struct RegisterService<F1, F2> {
+pub struct RegisterService<F1, F2> {
     sessions: Sessions,
     register_handle: F1,
     re_register_handle: F2,
     service_port_base: u16,
     heartbeat_port_base: u16,
+}
+
+pub fn create_grpc_server<F1, F2>(
+    register_handle: F1,
+    re_register_handle: F2,
+    config: &Config,
+) -> Result<GrpcServer, GrpcError>
+where
+    F1: Fn(Service) + Send + Clone + 'static,
+    F2: Fn(Service) + Send + Clone + 'static,
+{
+    let env = Arc::new(Environment::new(1));
+    let register_service = RegisterService::new(
+        register_handle,
+        re_register_handle,
+        config.service_port_base,
+        config.heartbeat_port_base,
+    );
+    let service = create_register(register_service);
+    ServerBuilder::new(env)
+        .register_service(service)
+        .bind("0.0.0.0", config.server_port)
+        .build()
 }
 
 impl<F1, F2> RegisterService<F1, F2>

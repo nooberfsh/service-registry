@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::thread::{self, JoinHandle};
 use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::marker::PhantomData;
 
 use futures::{Future, Sink, Stream};
@@ -171,16 +172,14 @@ enum Message<Q> {
 type Targets<P, Q> = Arc<Mutex<HashMap<Uuid, Target<P, Q>>>>;
 
 pub struct Hub<P, Q> {
-    targets: Targets<P, Q>,
-    sender: Sender<Message<Q>>,
+    handle: HubHandle<P, Q>,
     worker: Option<FutureWorker<HeartbeatTask>>,
     timer: Option<Timer>,
     thread_handle: Option<JoinHandle<()>>,
 }
 
 struct Inner<P, Q> {
-    targets: Targets<P, Q>,
-    sender: Sender<Message<Q>>,
+    handle: HubHandle<P, Q>,
     receiver: Receiver<Message<Q>>,
     scheduler: FutureScheduler<HeartbeatTask>,
     timer_handle: TimerHandle,
@@ -202,17 +201,21 @@ where
         let timer = Timer::new("hub_timer");
         let timer_handle = timer.get_handle();
 
-        let mut hub = Hub {
+        let hub_handle = HubHandle {
+            valid: Arc::new(AtomicBool::new(true)),
             targets: Arc::new(Mutex::new(HashMap::new())),
             sender: tx,
+        };
+
+        let mut hub = Hub {
+            handle: hub_handle,
             worker: Some(worker),
             timer: Some(timer),
             thread_handle: None,
         };
 
         let inner = Inner {
-            targets: Arc::clone(&hub.targets),
-            sender: hub.sender.clone(),
+            handle: hub.handle.clone(),
             receiver: rx,
             scheduler: scheduler,
             timer_handle: timer_handle,
@@ -226,20 +229,16 @@ where
         hub
     }
 
-    pub fn add_target(&self, target: Target<P, Q>) -> Uuid {
-        let uuid = target.uuid;
-        let task = target.gen_task();
-        let msg = Message::HeartbeatRequest(task);
-        self.sender.send(msg).unwrap();
+    pub fn get_handle(&self) -> HubHandle<P, Q> {
+        self.handle.clone()
+    }
 
-        let mut targets = self.targets.lock().unwrap();
-        targets.insert(target.uuid, target);
-        uuid
+    pub fn add_target(&self, target: Target<P, Q>) -> Uuid {
+        self.handle.add_target(target).unwrap()
     }
 
     pub fn remove_target(&self, id: Uuid) -> Option<Target<P, Q>> {
-        let mut targets = self.targets.lock().unwrap();
-        targets.remove(&id)
+        self.handle.remove_target(id).unwrap()
     }
 
     fn begin_loop(inner: Inner<P, Q>) {
@@ -252,12 +251,12 @@ where
                     }
                 }
                 Message::HeartbeatResponse(uuid, res) => {
-                    let mut targets = inner.targets.lock().unwrap();
+                    let mut targets = inner.handle.targets.lock().unwrap();
                     if let Some(target) = targets.remove(&uuid) {
                         let is_ok = res.is_ok();
                         (target.cb)(uuid, res);
                         if is_ok {
-                            let sender = inner.sender.clone();
+                            let sender = inner.handle.sender.clone();
                             let f = move || {
                                 let msg = Message::WakeupTarget(uuid);
                                 sender.send(msg).unwrap();
@@ -273,15 +272,59 @@ where
                     }
                 }
                 Message::WakeupTarget(uuid) => {
-                    let targets = inner.targets.lock().unwrap();
+                    let targets = inner.handle.targets.lock().unwrap();
                     if let Some(target) = targets.get(&uuid) {
                         let task = target.gen_task();
                         let msg = Message::HeartbeatRequest(task);
-                        inner.sender.send(msg).unwrap();
+                        inner.handle.sender.send(msg).unwrap();
                     }
                 }
                 Message::Stop => break,
             }
+        }
+    }
+}
+
+pub struct HubHandle<P, Q> {
+    valid: Arc<AtomicBool>,
+    targets: Targets<P, Q>,
+    sender: Sender<Message<Q>>,
+}
+
+impl<P, Q> HubHandle<P, Q>
+where
+    P: ProtoMessage,
+    Q: MessageStatic,
+{
+    pub fn add_target(&self, target: Target<P, Q>) -> Result<Uuid, Error> {
+        if !self.valid.load(Ordering::SeqCst) {
+            return Err(Error::Stopped);
+        }
+        let uuid = target.uuid;
+        let task = target.gen_task();
+        let msg = Message::HeartbeatRequest(task);
+        self.sender.send(msg).unwrap();
+
+        let mut targets = self.targets.lock().unwrap();
+        targets.insert(target.uuid, target);
+        Ok(uuid)
+    }
+
+    pub fn remove_target(&self, id: Uuid) -> Result<Option<Target<P, Q>>, Error> {
+        if !self.valid.load(Ordering::SeqCst) {
+            return Err(Error::Stopped);
+        }
+        let mut targets = self.targets.lock().unwrap();
+        Ok(targets.remove(&id))
+    }
+}
+
+impl<P, Q> Clone for HubHandle<P, Q> {
+    fn clone(&self) -> Self {
+        HubHandle {
+            valid: self.valid.clone(),
+            targets: self.targets.clone(),
+            sender: self.sender.clone(),
         }
     }
 }
@@ -304,8 +347,9 @@ impl<P, Q> Drop for Hub<P, Q> {
         //drop timer
         self.timer.take().unwrap();
 
+        self.handle.valid.store(false, Ordering::SeqCst);
         //exit loop routine;
-        self.sender.send(Message::Stop).unwrap();
+        self.handle.sender.send(Message::Stop).unwrap();
         let thread_handle = self.thread_handle.take().unwrap();
         thread_handle.join().unwrap();
     }
