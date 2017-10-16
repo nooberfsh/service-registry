@@ -66,6 +66,3 @@ pub struct Config {
     pub heartbeat_interval: Duration,
     pub heartbeat_timeout: Duration,
 }
-
-#[cfg(test)]
-mod test;

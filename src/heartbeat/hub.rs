@@ -117,12 +117,24 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new<F>(addr: &SocketAddr) -> Result<Self, Error> {
-        TargetBuilder::new(addr).build()
+    pub fn new(addr: &SocketAddr) -> Self {
+        TargetBuilder::new(addr).build().unwrap()
     }
 
     pub fn get_id(&self) -> Uuid {
         self.uuid
+    }
+
+    pub fn get_interval(&self) -> Duration {
+        self.interval
+    }
+
+    pub fn get_timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    pub fn get_payload(&self) -> &Option<Vec<u8>> {
+        &self.payload
     }
 
     fn gen_task(&self) -> HeartbeatTask {

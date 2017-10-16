@@ -187,7 +187,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    extern crate env_logger;
+    /*extern crate env_logger;
 
     use std::sync::mpsc;
 
@@ -449,5 +449,5 @@ mod tests {
             }
             _ => panic!(""),
         }
-    }
+    }*/
 }

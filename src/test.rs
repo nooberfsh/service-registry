@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    extern crate bytes;
+    /*extern crate bytes;
     extern crate env_logger;
 
     use std::sync::{Arc, Mutex};
@@ -333,5 +333,5 @@ mod tests {
         assert!(s2.is_some());
         let s3 = server.borrow(SING__SERVICE_ID);
         assert!(s3.is_some());
-    }
+    }*/
 }
