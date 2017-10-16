@@ -28,7 +28,7 @@ pub struct TargetBuilder<P, Q> {
     interval: Duration,
     timeout: Duration,
     request: P,
-    cb: Option<Box<Fn(Uuid, Result<Q, Error>) + Send + 'static>>,
+    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
 }
 
 impl<P, Q> TargetBuilder<P, Q>
@@ -59,7 +59,7 @@ where
 
     pub fn cb<F>(mut self, cb: F) -> Self
     where
-        F: Fn(Uuid, Result<Q, Error>) + Send + 'static,
+        F: Fn(Uuid, &Result<Q, Error>) + Send + 'static,
     {
         self.cb = Some(Box::new(cb));
         self
@@ -95,7 +95,7 @@ pub struct Target<P, Q> {
     interval: Duration,
     timeout: Duration,
     payload: Vec<u8>,
-    cb: Option<Box<Fn(Uuid, Result<Q, Error>) + Send + 'static>>,
+    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
     _marker: PhantomData<P>,
 }
 
@@ -222,14 +222,35 @@ struct Inner<P, Q> {
     receiver: Receiver<Message<Q>>,
     scheduler: FutureScheduler<HeartbeatTask>,
     timer_handle: TimerHandle,
+    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
 }
 
-impl<P, Q> Hub<P, Q>
+pub struct HubBuilder<P, Q> {
+    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
+    _marker: PhantomData<P>,
+}
+
+impl<P, Q> HubBuilder<P, Q>
 where
     P: ProtoMessage,
     Q: MessageStatic,
 {
     pub fn new() -> Self {
+        HubBuilder {
+            cb: None,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn cb<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(Uuid, &Result<Q, Error>) + Send + 'static,
+    {
+        self.cb = Some(Box::new(cb));
+        self
+    }
+
+    pub fn build(self) -> Hub<P, Q> {
         let (tx, rx) = mpsc::channel();
         let worker = FutureWorker::new(
             "heartbeat_hub_worker",
@@ -258,14 +279,26 @@ where
             receiver: rx,
             scheduler: scheduler,
             timer_handle: timer_handle,
+            cb: self.cb,
         };
 
         let thread_handle = thread::Builder::new()
             .name("heartbeat_hub".to_string())
-            .spawn(move || Self::begin_loop(inner))
+            .spawn(move || Hub::begin_loop(inner))
             .unwrap(); //TODO
         hub.thread_handle = Some(thread_handle);
         hub
+
+    }
+}
+
+impl<P, Q> Hub<P, Q>
+where
+    P: ProtoMessage,
+    Q: MessageStatic,
+{
+    pub fn new() -> Self {
+        HubBuilder::new().build()
     }
 
     pub fn get_handle(&self) -> HubHandle<P, Q> {
@@ -293,7 +326,8 @@ where
                     let mut targets = inner.handle.targets.lock().unwrap();
                     if let Some(target) = targets.remove(&uuid) {
                         let is_ok = res.is_ok();
-                        target.cb.as_ref().map(|cb| cb(uuid, res));
+                        target.cb.as_ref().map(|cb| cb(uuid, &res));
+                        inner.cb.as_ref().map(|cb| cb(uuid, &res));
                         if is_ok {
                             let sender = inner.handle.sender.clone();
                             let f = move || {
