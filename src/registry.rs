@@ -2,7 +2,6 @@ use std::thread::{self, JoinHandle};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender, Receiver};
-use std::time::Duration;
 
 use protobuf::{Message as ProtoMessage, MessageStatic};
 use grpcio::{Error as GrpcError, Server as GrpcServer};
@@ -48,8 +47,6 @@ where
     services: ServiceDetails,
     sender: Sender<Message<Q>>,
     receiver: Receiver<Message<Q>>,
-    heartbeat_interval: Duration,
-    heartbeat_timeout: Duration,
     hub_handle: HubHandle<P, Q>,
     service_available_handle: Box<Fn(Service) + Send + 'static>,
     service_droped_handle: Box<Fn(Service) + Send + 'static>,
@@ -62,8 +59,6 @@ where
 {
     pub fn new<F1, F2>(
         server_port: u16,
-        heartbeat_interval: Duration,
-        heartbeat_timeout: Duration,
         hub: Hub<P, Q>,
         service_available_handle: F1,
         service_droped_handle: F2,
@@ -92,8 +87,6 @@ where
             services: Arc::clone(&services),
             sender: tx.clone(),
             receiver: rx,
-            heartbeat_interval: heartbeat_interval,
-            heartbeat_timeout: heartbeat_timeout,
             hub_handle: hub.get_handle(),
             service_available_handle: Box::new(service_available_handle),
             service_droped_handle: Box::new(service_droped_handle),
@@ -148,8 +141,6 @@ where
             sender.send(msg).unwrap();
         };
         let target = TargetBuilder::new(&service.heartbeat_addr())
-            .interval(inner.heartbeat_interval)
-            .timeout(inner.heartbeat_timeout)
             .cb(f)
             .build()
             .unwrap();

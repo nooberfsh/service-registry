@@ -27,8 +27,8 @@ type Cb<Q> = Box<Fn(Uuid, Result<Q, Error>) + Send + 'static>;
 pub struct TargetBuilder<P, Q> {
     addr: SocketAddr,
     uuid: Uuid,
-    interval: Duration,
-    timeout: Duration,
+    interval: Option<Duration>,
+    timeout: Option<Duration>,
     request: Option<P>,
     cb: Option<Cb<Q>>,
 }
@@ -42,8 +42,8 @@ where
         TargetBuilder {
             addr: *addr,
             uuid: Uuid::new_v4(),
-            interval: Duration::from_secs(1),
-            timeout: Duration::from_secs(5),
+            interval: None,
+            timeout: None,
             request: None,
             cb: None,
         }
@@ -55,12 +55,12 @@ where
     }
 
     pub fn interval(mut self, interval: Duration) -> Self {
-        self.interval = interval;
+        self.interval = Some(interval);
         self
     }
 
     pub fn timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
+        self.timeout = Some(timeout);
         self
     }
 
@@ -105,8 +105,8 @@ where
 pub struct Target<P, Q> {
     addr: SocketAddr,
     uuid: Uuid,
-    interval: Duration,
-    timeout: Duration,
+    interval: Option<Duration>,
+    timeout: Option<Duration>,
     payload: Option<Vec<u8>>,
     cb: Option<Cb<Q>>,
     _marker: PhantomData<P>,
@@ -125,11 +125,11 @@ where
         self.uuid
     }
 
-    pub fn get_interval(&self) -> Duration {
+    pub fn get_interval(&self) -> Option<Duration> {
         self.interval
     }
 
-    pub fn get_timeout(&self) -> Duration {
+    pub fn get_timeout(&self) -> Option<Duration> {
         self.timeout
     }
 
@@ -156,12 +156,13 @@ impl<P, Q> fmt::Debug for Target<P, Q> {
 struct HeartbeatTask {
     addr: SocketAddr,
     uuid: Uuid,
-    timeout: Duration,
+    timeout: Option<Duration>,
     payload: Option<Vec<u8>>,
 }
 
 struct HeartbeatRunner<Q> {
     sender: Sender<Message<Q>>,
+    timeout: Duration,
     payload: Vec<u8>,
 }
 
@@ -188,7 +189,7 @@ where
             })
             .and_then(|r| parse_from_bytes::<Q>(&r).map_err(From::from));
 
-        Timeout::new(task.timeout, handle)
+        Timeout::new(task.timeout.unwrap_or_else(|| self.timeout), handle)
             .unwrap()
             .select2(base)
             .then(|r| {
@@ -248,11 +249,14 @@ struct Inner<P, Q> {
     receiver: Receiver<Message<Q>>,
     scheduler: FutureScheduler<HeartbeatTask>,
     timer_handle: TimerHandle,
+    default_interval: Duration,
     cb: Option<Cb<Q>>,
 }
 
 pub struct HubBuilder<P, Q> {
     cb: Option<Cb<Q>>,
+    default_timeout: Duration,
+    default_interval: Duration,
     default_request: P,
 }
 
@@ -261,9 +265,11 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new(default_request: P) -> Self {
+    pub fn new(default_request: P, default_timeout: Duration, default_interval: Duration) -> Self {
         HubBuilder {
             cb: None,
+            default_timeout: default_timeout,
+            default_interval: default_interval,
             default_request: default_request,
         }
     }
@@ -295,6 +301,7 @@ where
             HeartbeatRunner {
                 sender: tx.clone(),
                 payload: payload,
+                timeout: self.default_timeout,
             },
         );
         let scheduler = worker.get_scheduler();
@@ -320,6 +327,7 @@ where
             receiver: rx,
             scheduler: scheduler,
             timer_handle: timer_handle,
+            default_interval: self.default_interval,
             cb: self.cb,
         };
 
@@ -337,8 +345,12 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new(default_request: P) -> Result<Self, Error> {
-        HubBuilder::new(default_request).build()
+    pub fn new(
+        default_request: P,
+        default_timeout: Duration,
+        default_interval: Duration,
+    ) -> Result<Self, Error> {
+        HubBuilder::new(default_request, default_timeout, default_interval).build()
     }
 
     pub fn get_handle(&self) -> HubHandle<P, Q> {
@@ -374,7 +386,14 @@ where
                                 let msg = Message::WakeupTarget(uuid);
                                 sender.send(msg).unwrap();
                             };
-                            if inner.timer_handle.timeout(target.interval, f).is_err() {
+                            if inner
+                                .timer_handle
+                                .timeout(
+                                    target.interval.unwrap_or_else(|| inner.default_interval),
+                                    f,
+                                )
+                                .is_err()
+                            {
                                 info!("detect worker scheduler stoped");
                                 break;
                             }
