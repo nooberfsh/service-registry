@@ -64,9 +64,10 @@ where
 {
     heartbeat_server: HeartbeatServer<P, Q>,
     rpc_env: Arc<Environment>,
-    config: Config,
     meta: Meta,
     executor: E,
+    rpc_server_addr: SocketAddr,
+    heartbeat_interval: Duration,
 
     thread_handle: Option<JoinHandle<()>>,
 
@@ -85,7 +86,8 @@ struct Inner {
     service_port: u16,
     heartbeat_port: u16,
     service_id: ServiceId,
-    config: Config,
+    rpc_server_addr: SocketAddr,
+    heartbeat_interval: Duration,
 }
 
 impl Inner {
@@ -95,7 +97,7 @@ impl Inner {
         req.service_port = u32::from(self.service_port);
         req.service_id = self.service_id.0;
 
-        let addr = format!("{}", self.config.server_addr);
+        let addr = format!("{}", self.rpc_server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.env)).connect(&addr);
         let client = RegisterClient::new(ch);
         client.re_register(req).map_err(From::from)
@@ -114,21 +116,6 @@ impl From<Error> for RpcError {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Config {
-    pub heartbeat_interval: Duration,
-    pub server_addr: SocketAddr,
-}
-
-impl Config {
-    pub fn new(heartbeat_interval: Duration, server_addr: SocketAddr) -> Self {
-        Config {
-            heartbeat_interval: heartbeat_interval,
-            server_addr: server_addr,
-        }
-    }
-}
-
 pub trait Executor {
     fn service_id(&self) -> ServiceId;
     fn run(&mut self, port: u16) -> bool;
@@ -141,7 +128,12 @@ where
     Q: ProtoMessage,
     E: Executor,
 {
-    pub fn new<F>(config: Config, gen_rsp: F, executor: E) -> Self
+    pub fn new<F>(
+        rpc_server_addr: SocketAddr,
+        heartbeat_interval: Duration,
+        gen_rsp: F,
+        executor: E,
+    ) -> Self
     where
         F: Fn(P) -> Q + Send + Sync + 'static,
     {
@@ -156,9 +148,10 @@ where
             heartbeat_server: HeartbeatServer::new("heartbeat_server", f),
             rpc_env: Arc::new(EnvBuilder::new().build()),
             thread_handle: None,
-            config: config,
             meta: Meta::new(),
             executor: executor,
+            rpc_server_addr: rpc_server_addr,
+            heartbeat_interval: heartbeat_interval,
 
             shutdown_registration: shutdown_registration,
             shutdown_set_readiness: shutdown_set_readiness,
@@ -169,7 +162,7 @@ where
     }
 
     fn register_service(&self) -> Result<RegisterResponse, RpcError> {
-        let addr = format!("{}", self.config.server_addr);
+        let addr = format!("{}", self.rpc_server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.rpc_env)).connect(&addr);
         let client = RegisterClient::new(ch);
         let mut req = RegisterRequest::new();
@@ -183,7 +176,7 @@ where
         req.heartbeat_succeed = self.meta.has_heartbeat_port();
         req.session_id = session_id;
 
-        let addr = format!("{}", self.config.server_addr);
+        let addr = format!("{}", self.rpc_server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.rpc_env)).connect(&addr);
         let client = RegisterClient::new(ch);
         client.report_status(req).map_err(|e| e.into())
@@ -244,24 +237,21 @@ where
         Ok(())
     }
 
-    fn inner(&mut self) -> Inner {
-        Inner {
-            heartbeat_set_readiness: self.heartbeat_set_readiness.clone(),
-            env: Arc::clone(&self.rpc_env),
-
-            service_port: self.meta.service_port.unwrap(),
-            heartbeat_port: self.meta.heartbeat_port.unwrap(),
-            config: self.config.clone(),
-            service_id: self.executor.service_id(),
-        }
-    }
-
     pub fn start(&mut self) -> Result<(), RpcError> {
         self.register_and_run()?;
 
         let poll = Poll::new().unwrap();
         self.register_registration(&poll);
-        let inner = self.inner();
+        let inner = Inner {
+            heartbeat_set_readiness: self.heartbeat_set_readiness.clone(),
+            env: Arc::clone(&self.rpc_env),
+
+            service_port: self.meta.service_port.unwrap(),
+            heartbeat_port: self.meta.heartbeat_port.unwrap(),
+            service_id: self.executor.service_id(),
+            rpc_server_addr: self.rpc_server_addr,
+            heartbeat_interval: self.heartbeat_interval,
+        };
 
         let handle = thread::Builder::new()
             .name("container".to_string())
@@ -274,7 +264,7 @@ where
     fn begin_loop(poll: Poll, inner: Inner) {
         let mut events = Events::with_capacity(4);
         loop {
-            let num = poll.poll(&mut events, Some(inner.config.heartbeat_interval))
+            let num = poll.poll(&mut events, Some(inner.heartbeat_interval))
                 .unwrap();
             if num == 0 {
                 //indicate registry server did not touch us for heartbeat_interval time
