@@ -27,7 +27,7 @@ pub struct TargetBuilder<P, Q> {
     uuid: Uuid,
     interval: Duration,
     timeout: Duration,
-    request: P,
+    request: Option<P>,
     cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
 }
 
@@ -36,15 +36,20 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new(addr: &SocketAddr, request: P) -> Self {
+    pub fn new(addr: &SocketAddr) -> Self {
         TargetBuilder {
             addr: *addr,
             uuid: Uuid::new_v4(),
             interval: Duration::from_secs(1),
             timeout: Duration::from_secs(5),
-            request: request,
+            request: None,
             cb: None,
         }
+    }
+
+    pub fn request(mut self, request: P) -> Self {
+        self.request = Some(request);
+        self
     }
 
     pub fn interval(mut self, interval: Duration) -> Self {
@@ -66,17 +71,23 @@ where
     }
 
     pub fn build(self) -> Result<Target<P, Q>, Error> {
-        let payload = self.request
-            .write_to_bytes()
-            .map_err(|e| {
-                let s = format!("{:?}", e);
-                Error::SerializeFailed(s)
-            })
-            .and_then(|v| if v.is_empty() {
-                Err(Error::ZeroPayload)
+        let payload = {
+            if let Some(request) = self.request {
+                Some(request
+                    .write_to_bytes()
+                    .map_err(|e| {
+                        let s = format!("{:?}", e);
+                        Error::SerializeFailed(s)
+                    })
+                    .and_then(|v| if v.is_empty() {
+                        Err(Error::ZeroPayload)
+                    } else {
+                        Ok(v)
+                    })?)
             } else {
-                Ok(v)
-            })?;
+                None
+            }
+        };
         Ok(Target {
             addr: self.addr,
             uuid: self.uuid,
@@ -94,7 +105,7 @@ pub struct Target<P, Q> {
     uuid: Uuid,
     interval: Duration,
     timeout: Duration,
-    payload: Vec<u8>,
+    payload: Option<Vec<u8>>,
     cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
     _marker: PhantomData<P>,
 }
@@ -104,8 +115,8 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new<F>(addr: &SocketAddr, request: P) -> Result<Self, Error> {
-        TargetBuilder::new(addr, request).build()
+    pub fn new<F>(addr: &SocketAddr) -> Result<Self, Error> {
+        TargetBuilder::new(addr).build()
     }
 
     pub fn get_id(&self) -> Uuid {
@@ -132,11 +143,12 @@ struct HeartbeatTask {
     addr: SocketAddr,
     uuid: Uuid,
     timeout: Duration,
-    payload: Vec<u8>,
+    payload: Option<Vec<u8>>,
 }
 
 struct HeartbeatRunner<Q> {
     sender: Sender<Message<Q>>,
+    payload: Vec<u8>,
 }
 
 impl<Q> HeartbeatRunner<Q>
@@ -148,7 +160,7 @@ where
         task: HeartbeatTask,
         handle: &Handle,
     ) -> impl Future<Item = Q, Error = Error> {
-        let payload = task.payload.into();
+        let payload = task.payload.unwrap_or_else(|| self.payload.clone()).into();
         let base = TcpStream::connect(&task.addr, handle)
             .and_then(move |stream| {
                 let frame = Framed::new(stream);
@@ -227,7 +239,7 @@ struct Inner<P, Q> {
 
 pub struct HubBuilder<P, Q> {
     cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
-    _marker: PhantomData<P>,
+    default_request: P,
 }
 
 impl<P, Q> HubBuilder<P, Q>
@@ -235,10 +247,10 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new() -> Self {
+    pub fn new(default_request: P) -> Self {
         HubBuilder {
             cb: None,
-            _marker: PhantomData,
+            default_request: default_request,
         }
     }
 
@@ -250,11 +262,26 @@ where
         self
     }
 
-    pub fn build(self) -> Hub<P, Q> {
+    pub fn build(self) -> Result<Hub<P, Q>, Error> {
+        let payload = self.default_request
+            .write_to_bytes()
+            .map_err(|e| {
+                let s = format!("{:?}", e);
+                Error::SerializeFailed(s)
+            })
+            .and_then(|v| if v.is_empty() {
+                Err(Error::ZeroPayload)
+            } else {
+                Ok(v)
+            })?;
+
         let (tx, rx) = mpsc::channel();
         let worker = FutureWorker::new(
             "heartbeat_hub_worker",
-            HeartbeatRunner { sender: tx.clone() },
+            HeartbeatRunner {
+                sender: tx.clone(),
+                payload: payload,
+            },
         );
         let scheduler = worker.get_scheduler();
 
@@ -287,8 +314,7 @@ where
             .spawn(move || Hub::begin_loop(inner))
             .unwrap(); //TODO
         hub.thread_handle = Some(thread_handle);
-        hub
-
+        Ok(hub)
     }
 }
 
@@ -297,8 +323,8 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new() -> Self {
-        HubBuilder::new().build()
+    pub fn new(default_request: P) -> Result<Self, Error> {
+        HubBuilder::new(default_request).build()
     }
 
     pub fn get_handle(&self) -> HubHandle<P, Q> {
@@ -399,16 +425,6 @@ impl<P, Q> Clone for HubHandle<P, Q> {
             targets: self.targets.clone(),
             sender: self.sender.clone(),
         }
-    }
-}
-
-impl<P, Q> Default for Hub<P, Q>
-where
-    P: ProtoMessage,
-    Q: MessageStatic,
-{
-    fn default() -> Self {
-        Self::new()
     }
 }
 

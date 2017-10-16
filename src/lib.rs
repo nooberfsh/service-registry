@@ -40,6 +40,7 @@ impl From<u64> for ServiceId {
     }
 }
 
+#[derive(Debug)]
 pub struct Service {
     sid: ServiceId,
     host: IpAddr,
