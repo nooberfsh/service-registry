@@ -17,7 +17,7 @@ pub enum Error {
     IoErr(Arc<io::Error>),
     Timeout,
 
-    Stopped,
+    HubStopped,
 }
 
 impl Error {
@@ -45,6 +45,13 @@ impl Error {
     pub fn is_serialize_failed(&self) -> bool {
         match *self {
             Error::SerializeFailed(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_hub_stoped(&self) -> bool {
+        match *self {
+            Error::HubStopped => true,
             _ => false,
         }
     }

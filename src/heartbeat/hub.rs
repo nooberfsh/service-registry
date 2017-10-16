@@ -399,7 +399,7 @@ where
 {
     pub fn add_target(&self, target: Target<P, Q>) -> Result<Uuid, Error> {
         if !self.valid.load(Ordering::SeqCst) {
-            return Err(Error::Stopped);
+            return Err(Error::HubStopped);
         }
         let uuid = target.uuid;
         let task = target.gen_task();
@@ -413,7 +413,7 @@ where
 
     pub fn remove_target(&self, id: Uuid) -> Result<Option<Target<P, Q>>, Error> {
         if !self.valid.load(Ordering::SeqCst) {
-            return Err(Error::Stopped);
+            return Err(Error::HubStopped);
         }
         let mut targets = self.targets.lock().unwrap();
         Ok(targets.remove(&id))
