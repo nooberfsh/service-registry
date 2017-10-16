@@ -1,35 +1,26 @@
-use std::io;
 use std::thread::{self, JoinHandle};
-use std::net::{IpAddr, SocketAddr};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::time::Duration;
-use std::marker::PhantomData;
 
 use protobuf::{Message as ProtoMessage, MessageStatic};
-use grpcio::{RpcContext, UnarySink, Error as GrpcError, Server as GrpcServer};
-use futures::Future;
+use grpcio::{Error as GrpcError, Server as GrpcServer};
 use uuid::Uuid;
 
-use heartbeat::{Hub, HubHandle};
-use super::{Service, ServiceId, rpc_server, Config};
-use super::registry_proto_grpc::{create_register, Register};
+use heartbeat::{Hub, HubHandle, TargetBuilder, Error as HeartbeatError};
+use super::{Service, rpc_server, Config};
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 struct ServiceDetail {
-    sid: ServiceId,
-    service_addr: SocketAddr,
-    heartbeat_addr: SocketAddr,
+    service: Service,
     uuid: Uuid,
 }
 
 impl ServiceDetail {
-    fn new(service: &Service, uuid: Uuid) -> Self {
+    fn new(service: Service, uuid: Uuid) -> Self {
         ServiceDetail {
-            sid: service.sid,
-            service_addr: service.service_addr(),
-            heartbeat_addr: service.heartbeat_addr(),
+            service: service,
             uuid: uuid,
         }
     }
@@ -43,7 +34,7 @@ where
     Q: MessageStatic,
 {
     services: ServiceDetails,
-    sender: Sender<Message>,
+    sender: Sender<Message<Q>>,
     grpc_server: Option<GrpcServer>,
     hub: Option<Hub<P, Q>>,
     thread_handle: Option<JoinHandle<()>>,
@@ -55,13 +46,13 @@ where
     Q: MessageStatic,
 {
     services: ServiceDetails,
-    sender: Sender<Message>,
-    receiver: Receiver<Message>,
+    sender: Sender<Message<Q>>,
+    receiver: Receiver<Message<Q>>,
     heartbeat_interval: Duration,
     heartbeat_timeout: Duration,
     hub_handle: HubHandle<P, Q>,
-    service_available_handle: Box<Fn(ServiceId, SocketAddr) + Send + 'static>,
-    service_droped_handle: Box<Fn(ServiceId, SocketAddr) + Send + 'static>,
+    service_available_handle: Box<Fn(Service) + Send + 'static>,
+    service_droped_handle: Box<Fn(Service) + Send + 'static>,
 }
 
 impl<P, Q> Registry<P, Q>
@@ -71,12 +62,13 @@ where
 {
     pub fn new<F1, F2>(
         config: Config,
+        hub: Hub<P, Q>,
         service_available_handle: F1,
         service_droped_handle: F2,
     ) -> Result<Self, GrpcError>
     where
-        F1: Fn(ServiceId, SocketAddr) + Send + 'static,
-        F2: Fn(ServiceId, SocketAddr) + Send + 'static,
+        F1: Fn(Service) + Send + 'static,
+        F2: Fn(Service) + Send + 'static,
     {
         let (tx, rx) = mpsc::channel();
         // create grpc server;
@@ -93,7 +85,6 @@ where
             rpc_server::create_grpc_server(register_handle, re_register_handle, &config)?;
         grpc_server.start();
 
-        let hub = Hub::new();
         let services = Default::default();
         let inner = Inner {
             services: Arc::clone(&services),
@@ -123,31 +114,61 @@ where
     fn begin_loop(inner: Inner<P, Q>) {
         loop {
             match inner.receiver.recv().unwrap() {
-                Message::Register(service) => {}
-                Message::ReRegister(service) => {}
-                Message::HeartbeatFailed(uuid) => {}
+                Message::Register(service) |
+                Message::ReRegister(service) => Self::add_service(service, &inner),
+                Message::Heartbeat(uuid, res) => {
+                    if let Err(e) = res {
+                        let mut lock = inner.services.lock().unwrap();
+                        let detail = lock.remove(&uuid).unwrap();
+                        warn!(
+                            "heartbeat to service:{:?} failed, reason:{:?}, remove this service",
+                            detail,
+                            e
+                        );
+                    }
+                }
                 Message::Stop => break,
             }
         }
     }
 
-    fn add_service(service: Service, inner: &Inner<P, Q>) -> bool {
-        /*let saddr = service.service_addr();
-        let lock = inner.services.lock().unwrap();
-        if lock.iter().find(|sd|{
-            sd.service_addr == sadd
-        }).is_some() {
-            return false;
+    fn add_service(service: Service, inner: &Inner<P, Q>) {
+        let mut lock = inner.services.lock().unwrap();
+        if lock.values().any(|sd| sd.service == service) {
+            warn!(
+                "add service:{:?} failed, it had been in the service table",
+                service
+            );
         }
-        let target = Target::new(&service.heartbeat_addr(), inner.heartbeat_interval, inner.heartbeat_timeout, )*/
-        unimplemented!()
+        let sender = inner.sender.clone();
+        let f = move |uuid, res| {
+            let msg = Message::Heartbeat(uuid, res);
+            sender.send(msg).unwrap();
+        };
+        let target = TargetBuilder::new(&service.heartbeat_addr())
+            .interval(inner.heartbeat_interval)
+            .timeout(inner.heartbeat_timeout)
+            .cb(f)
+            .build()
+            .unwrap();
+
+        let uuid = {
+            if let Ok(uuid) = inner.hub_handle.add_target(target) {
+                uuid
+            } else {
+                info!("add target to hub failed because hub was destroyed");
+                return;
+            }
+        };
+        lock.insert(uuid, ServiceDetail::new(service.clone(), uuid));
+        (inner.service_available_handle)(service);
     }
 }
 
-enum Message {
+enum Message<Q> {
     Register(Service),
     ReRegister(Service),
-    HeartbeatFailed(Uuid),
+    Heartbeat(Uuid, Result<Q, HeartbeatError>),
     Stop,
 }
 

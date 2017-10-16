@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::Arc;
 
 mod server;
 mod hub;
@@ -8,12 +9,12 @@ pub mod heartbeat_proto;
 pub use self::server::Server;
 pub use self::hub::{Target, TargetBuilder, Hub, HubBuilder, HubHandle};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Error {
     SerializeFailed(String),
     ZeroPayload,
 
-    IoErr(io::Error),
+    IoErr(Arc<io::Error>),
     Timeout,
 
     Stopped,

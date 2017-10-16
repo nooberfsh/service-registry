@@ -40,7 +40,7 @@ impl From<u64> for ServiceId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Service {
     sid: ServiceId,
     host: IpAddr,
@@ -49,11 +49,11 @@ pub struct Service {
 }
 
 impl Service {
-    fn service_addr(&self) -> SocketAddr {
+    pub fn service_addr(&self) -> SocketAddr {
         SocketAddr::new(self.host, self.service_port)
     }
 
-    fn heartbeat_addr(&self) -> SocketAddr {
+    pub fn heartbeat_addr(&self) -> SocketAddr {
         SocketAddr::new(self.host, self.heartbeat_port)
     }
 }

@@ -22,13 +22,15 @@ use worker::{FutureRunner, FutureWorker, FutureScheduler};
 use super::Error;
 use super::timer::{Timer, TimerHandle};
 
+type Cb<Q> = Box<Fn(Uuid, Result<Q, Error>) + Send + 'static>;
+
 pub struct TargetBuilder<P, Q> {
     addr: SocketAddr,
     uuid: Uuid,
     interval: Duration,
     timeout: Duration,
     request: Option<P>,
-    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
+    cb: Option<Cb<Q>>,
 }
 
 impl<P, Q> TargetBuilder<P, Q>
@@ -57,14 +59,14 @@ where
         self
     }
 
-    pub fn tiemout(mut self, timeout: Duration) -> Self {
+    pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
     pub fn cb<F>(mut self, cb: F) -> Self
     where
-        F: Fn(Uuid, &Result<Q, Error>) + Send + 'static,
+        F: Fn(Uuid, Result<Q, Error>) + Send + 'static,
     {
         self.cb = Some(Box::new(cb));
         self
@@ -106,7 +108,7 @@ pub struct Target<P, Q> {
     interval: Duration,
     timeout: Duration,
     payload: Option<Vec<u8>>,
-    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
+    cb: Option<Cb<Q>>,
     _marker: PhantomData<P>,
 }
 
@@ -188,7 +190,7 @@ where
                     Err(e) => {
                         match e {
                             Either::A(_) => unreachable!(), // poll of Timeout never return Err,
-                            Either::B((e, _)) => Err(Error::IoErr(e)),
+                            Either::B((e, _)) => Err(Error::IoErr(Arc::new(e))),
                         }
                     }
                 }
@@ -234,11 +236,11 @@ struct Inner<P, Q> {
     receiver: Receiver<Message<Q>>,
     scheduler: FutureScheduler<HeartbeatTask>,
     timer_handle: TimerHandle,
-    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
+    cb: Option<Cb<Q>>,
 }
 
 pub struct HubBuilder<P, Q> {
-    cb: Option<Box<Fn(Uuid, &Result<Q, Error>) + Send + 'static>>,
+    cb: Option<Cb<Q>>,
     default_request: P,
 }
 
@@ -256,7 +258,7 @@ where
 
     pub fn cb<F>(mut self, cb: F) -> Self
     where
-        F: Fn(Uuid, &Result<Q, Error>) + Send + 'static,
+        F: Fn(Uuid, Result<Q, Error>) + Send + 'static,
     {
         self.cb = Some(Box::new(cb));
         self
@@ -352,8 +354,8 @@ where
                     let mut targets = inner.handle.targets.lock().unwrap();
                     if let Some(target) = targets.remove(&uuid) {
                         let is_ok = res.is_ok();
-                        target.cb.as_ref().map(|cb| cb(uuid, &res));
-                        inner.cb.as_ref().map(|cb| cb(uuid, &res));
+                        target.cb.as_ref().map(|cb| cb(uuid, res.clone()));
+                        inner.cb.as_ref().map(|cb| cb(uuid, res));
                         if is_ok {
                             let sender = inner.handle.sender.clone();
                             let f = move || {
@@ -421,8 +423,8 @@ where
 impl<P, Q> Clone for HubHandle<P, Q> {
     fn clone(&self) -> Self {
         HubHandle {
-            valid: self.valid.clone(),
-            targets: self.targets.clone(),
+            valid: Arc::clone(&self.valid),
+            targets: Arc::clone(&self.targets),
             sender: self.sender.clone(),
         }
     }
