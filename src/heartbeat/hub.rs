@@ -371,7 +371,6 @@ where
                 Message::HeartbeatRequest(task) => {
                     if inner.scheduler.schedule(task).is_err() {
                         info!("detect worker scheduler stoped");
-                        break;
                     }
                 }
                 Message::HeartbeatResponse(uuid, res) => {
@@ -395,7 +394,6 @@ where
                                 .is_err()
                             {
                                 info!("detect worker scheduler stoped");
-                                break;
                             }
                             targets.insert(uuid, target);
                         } else {
