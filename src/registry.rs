@@ -106,6 +106,11 @@ where
         })
     }
 
+    pub fn get_all_services(&self) -> Vec<Service> {
+        let lock = self.services.lock().unwrap();
+        lock.values().map(|sd| sd.service.clone()).collect()
+    }
+
     fn begin_loop(inner: Inner<P, Q>) {
         loop {
             match inner.receiver.recv().unwrap() {

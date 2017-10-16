@@ -1,8 +1,5 @@
 extern crate service_registry;
 
-#[macro_use]
-extern crate log;
-extern crate env_logger;
 extern crate worker;
 extern crate protobuf;
 
@@ -72,7 +69,6 @@ fn test_hub_construct() {
 
 #[test]
 fn test_hub_interval() {
-    let _ = env_logger::init();
     let port = 10_004;
     let mut server = create_server("test_hub_interval");
     server.start(port).unwrap();
@@ -106,7 +102,6 @@ fn test_hub_interval() {
         assert_eq!(res.unwrap(), simple_heartbeat_response());
         count += 1;
     }
-    warn!("{:?}", start.elapsed());
     assert!(start.elapsed() > Duration::from_millis(250));
     assert!(start.elapsed() < Duration::from_millis(300));
 }
