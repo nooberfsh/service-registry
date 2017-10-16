@@ -22,32 +22,51 @@ use worker::{FutureRunner, FutureWorker, FutureScheduler};
 use super::Error;
 use super::timer::{Timer, TimerHandle};
 
-pub struct Target<P, Q> {
+pub struct TargetBuilder<P, Q> {
     addr: SocketAddr,
     uuid: Uuid,
     interval: Duration,
     timeout: Duration,
-    payload: Vec<u8>,
-    cb: Box<Fn(Uuid, Result<Q, Error>) + Send + 'static>,
-    _marker: PhantomData<P>,
+    request: P,
+    cb: Option<Box<Fn(Uuid, Result<Q, Error>) + Send + 'static>>,
 }
 
-impl<P, Q> Target<P, Q>
+impl<P, Q> TargetBuilder<P, Q>
 where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new<F>(
-        addr: &SocketAddr,
-        interval: Duration,
-        timeout: Duration,
-        request: P,
-        cb: F,
-    ) -> Result<Self, Error>
+    pub fn new(addr: &SocketAddr, request: P) -> Self {
+        TargetBuilder {
+            addr: *addr,
+            uuid: Uuid::new_v4(),
+            interval: Duration::from_secs(1),
+            timeout: Duration::from_secs(5),
+            request: request,
+            cb: None,
+        }
+    }
+
+    pub fn interval(mut self, interval: Duration) -> Self {
+        self.interval = interval;
+        self
+    }
+
+    pub fn tiemout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn cb<F>(mut self, cb: F) -> Self
     where
         F: Fn(Uuid, Result<Q, Error>) + Send + 'static,
     {
-        let payload = request
+        self.cb = Some(Box::new(cb));
+        self
+    }
+
+    pub fn build(self) -> Result<Target<P, Q>, Error> {
+        let payload = self.request
             .write_to_bytes()
             .map_err(|e| {
                 let s = format!("{:?}", e);
@@ -59,14 +78,34 @@ where
                 Ok(v)
             })?;
         Ok(Target {
-            addr: *addr,
-            uuid: Uuid::new_v4(),
-            interval: interval,
-            timeout: timeout,
+            addr: self.addr,
+            uuid: self.uuid,
+            interval: self.interval,
+            timeout: self.timeout,
             payload: payload,
-            cb: Box::new(cb),
+            cb: self.cb,
             _marker: PhantomData,
         })
+    }
+}
+
+pub struct Target<P, Q> {
+    addr: SocketAddr,
+    uuid: Uuid,
+    interval: Duration,
+    timeout: Duration,
+    payload: Vec<u8>,
+    cb: Option<Box<Fn(Uuid, Result<Q, Error>) + Send + 'static>>,
+    _marker: PhantomData<P>,
+}
+
+impl<P, Q> Target<P, Q>
+where
+    P: ProtoMessage,
+    Q: MessageStatic,
+{
+    pub fn new<F>(addr: &SocketAddr, request: P) -> Result<Self, Error> {
+        TargetBuilder::new(addr, request).build()
     }
 
     pub fn get_id(&self) -> Uuid {
@@ -254,7 +293,7 @@ where
                     let mut targets = inner.handle.targets.lock().unwrap();
                     if let Some(target) = targets.remove(&uuid) {
                         let is_ok = res.is_ok();
-                        (target.cb)(uuid, res);
+                        target.cb.as_ref().map(|cb| cb(uuid, res));
                         if is_ok {
                             let sender = inner.handle.sender.clone();
                             let f = move || {
