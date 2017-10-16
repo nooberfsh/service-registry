@@ -10,7 +10,7 @@ use super::registry_proto_grpc::*;
 use super::registry_proto::*;
 use futures::Future;
 
-use super::{ServiceId, Service, Config};
+use super::{ServiceId, Service};
 
 fn fresh_session_id() -> usize {
     static NEXT_ID: AtomicUsize = ATOMIC_USIZE_INIT;
@@ -42,18 +42,13 @@ struct Session {
 }
 
 impl Session {
-    fn new<T: Into<IpAddr>>(
-        service_id: ServiceId,
-        host: T,
-        service_port: u16,
-        heartbeat_port: u16,
-    ) -> Self {
+    fn new<T: Into<IpAddr>>(service_id: ServiceId, host: T) -> Self {
         Session {
             session_id: fresh_session_id().into(),
             service_id: service_id,
             host: host.into(),
-            service_port: service_port,
-            heartbeat_port: heartbeat_port,
+            service_port: 20_000,
+            heartbeat_port: 25_000,
         }
     }
 
@@ -78,30 +73,23 @@ pub struct RegisterService<F1, F2> {
     sessions: Sessions,
     register_handle: F1,
     re_register_handle: F2,
-    service_port_base: u16,
-    heartbeat_port_base: u16,
 }
 
 pub fn create_grpc_server<F1, F2>(
+    port: u16,
     register_handle: F1,
     re_register_handle: F2,
-    config: &Config,
 ) -> Result<GrpcServer, GrpcError>
 where
     F1: Fn(Service) + Send + Clone + 'static,
     F2: Fn(Service) + Send + Clone + 'static,
 {
     let env = Arc::new(Environment::new(1));
-    let register_service = RegisterService::new(
-        register_handle,
-        re_register_handle,
-        config.service_port_base,
-        config.heartbeat_port_base,
-    );
+    let register_service = RegisterService::new(register_handle, re_register_handle);
     let service = create_register(register_service);
     ServerBuilder::new(env)
         .register_service(service)
-        .bind("0.0.0.0", config.server_port)
+        .bind("0.0.0.0", port)
         .build()
 }
 
@@ -110,18 +98,11 @@ where
     F1: Fn(Service) + Send + Clone + 'static,
     F2: Fn(Service) + Send + Clone + 'static,
 {
-    pub fn new(
-        register_handle: F1,
-        re_register_handle: F2,
-        service_port_base: u16,
-        heartbeat_port_base: u16,
-    ) -> Self {
+    pub fn new(register_handle: F1, re_register_handle: F2) -> Self {
         RegisterService {
             sessions: Default::default(),
             register_handle: register_handle,
             re_register_handle: re_register_handle,
-            service_port_base: service_port_base,
-            heartbeat_port_base: heartbeat_port_base,
         }
     }
 }
@@ -133,12 +114,7 @@ where
 {
     fn register(&self, ctx: RpcContext, req: RegisterRequest, sink: UnarySink<RegisterResponse>) {
         let host = extract_host_from_grpc_bytes(ctx.host());
-        let session = Session::new(
-            req.service_id.into(),
-            host,
-            self.service_port_base,
-            self.heartbeat_port_base,
-        );
+        let session = Session::new(req.service_id.into(), host);
         let mut lock = self.sessions.lock().unwrap();
         debug_assert!(!lock.contains_key(&session.session_id));
         lock.insert(session.session_id, session.clone());

@@ -9,7 +9,7 @@ use grpcio::{Error as GrpcError, Server as GrpcServer};
 use uuid::Uuid;
 
 use heartbeat::{Hub, HubHandle, TargetBuilder, Error as HeartbeatError};
-use super::{Service, rpc_server, Config};
+use super::{Service, rpc_server};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 struct ServiceDetail {
@@ -61,7 +61,9 @@ where
     Q: MessageStatic,
 {
     pub fn new<F1, F2>(
-        config: Config,
+        server_port: u16,
+        heartbeat_interval: Duration,
+        heartbeat_timeout: Duration,
         hub: Hub<P, Q>,
         service_available_handle: F1,
         service_droped_handle: F2,
@@ -82,7 +84,7 @@ where
             move |service| sender.send(Message::ReRegister(service)).unwrap()
         };
         let mut grpc_server =
-            rpc_server::create_grpc_server(register_handle, re_register_handle, &config)?;
+            rpc_server::create_grpc_server(server_port, register_handle, re_register_handle)?;
         grpc_server.start();
 
         let services = Default::default();
@@ -90,8 +92,8 @@ where
             services: Arc::clone(&services),
             sender: tx.clone(),
             receiver: rx,
-            heartbeat_interval: config.heartbeat_interval,
-            heartbeat_timeout: config.heartbeat_timeout,
+            heartbeat_interval: heartbeat_interval,
+            heartbeat_timeout: heartbeat_timeout,
             hub_handle: hub.get_handle(),
             service_available_handle: Box::new(service_available_handle),
             service_droped_handle: Box::new(service_droped_handle),
