@@ -222,3 +222,68 @@ fn extract_host_from_grpc_bytes(addr: &[u8]) -> IpAddr {
     // TODO is unwrap safe here?
     bytes_to_host(&host).unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate env_logger;
+
+    use std::sync::mpsc;
+
+    use grpcio::ChannelBuilder;
+
+    use register::register_proto_grpc::*;
+    use super::*;
+
+    #[test]
+    fn test_bytes_to_host() {
+        let a1 = [0; 4];
+        let a2 = [0; 1];
+        let a3 = [0; 5];
+        let a4 = [0; 16];
+        let a5 = [0; 26];
+
+        let r1 = bytes_to_host(&a1);
+        let r2 = bytes_to_host(&a2);
+        let r3 = bytes_to_host(&a3);
+        let r4 = bytes_to_host(&a4);
+        let r5 = bytes_to_host(&a5);
+
+        assert!(r1.is_ok());
+        assert!(r2.is_err());
+        assert!(r3.is_err());
+        assert!(r4.is_ok());
+        assert!(r5.is_err());
+    }
+
+    #[test]
+    fn test_extract_host_from_grpc_bytes() {
+        let a = b"127.127.127.127:65535";
+        let b = extract_host_from_grpc_bytes(a);
+        let ip = "127.127.127.127".parse().unwrap();
+        assert_eq!(b, ip);
+
+        let a = b"0.0.0.127:65535";
+        let b = extract_host_from_grpc_bytes(a);
+        let ip = "0.0.0.127".parse().unwrap();
+        assert_eq!(b, ip);
+
+        let a = b"1.1.1.1:1";
+        let b = extract_host_from_grpc_bytes(a);
+        let ip = "1.1.1.1".parse().unwrap();
+        assert_eq!(b, ip);
+    }
+
+    #[test]
+    fn test_session() {
+        let ip = [0; 4];
+        let mut s = Session::new(ServiceId(1), ip);
+
+        s.step_heartbeat_port();
+        s.step_service_port();
+        assert_eq!(s1.service_port, 20_000 + 1);
+        assert_eq!(s1.heartbeat_port, 25_000 + 1);
+        s.step_both();
+        assert_eq!(s1.service_port, 20_000 + 2);
+        assert_eq!(s1.heartbeat_port, 25_000 + 2);
+    }
+}
