@@ -42,13 +42,16 @@ struct Session {
 }
 
 impl Session {
+    const DEFAULT_SERVICE_PORT: u16 = 20_000;
+    const DEFAULT_HEARTBEAT_PORT: u16 = 25_000;
+
     fn new<T: Into<IpAddr>>(service_id: ServiceId, host: T) -> Self {
         Session {
             session_id: fresh_session_id().into(),
             service_id: service_id,
             host: host.into(),
-            service_port: 20_000,
-            heartbeat_port: 25_000,
+            service_port: Self::DEFAULT_SERVICE_PORT,
+            heartbeat_port: Self::DEFAULT_HEARTBEAT_PORT,
         }
     }
 

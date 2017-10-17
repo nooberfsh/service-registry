@@ -56,3 +56,6 @@ impl Service {
         SocketAddr::new(self.host, self.heartbeat_port)
     }
 }
+
+#[cfg(test)]
+mod test;
