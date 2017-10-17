@@ -16,7 +16,7 @@ use super::ServiceId;
 const SHUTDOWN_TOKEN: Token = Token(0);
 const HEARTBEAT_TOKEN: Token = Token(1);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Meta {
     service_port: Option<u16>,
     heartbeat_port: Option<u16>,

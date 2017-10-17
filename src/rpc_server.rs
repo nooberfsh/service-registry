@@ -130,6 +130,7 @@ where
         let mut rsp = StatusResponse::new();
         let mut lock = self.sessions.lock().unwrap();
         if let Some(mut session) = lock.remove(&req.session_id.into()) {
+            rsp.succeed = true;
             if req.heartbeat_succeed && req.service_succeed {
                 let host = extract_host_from_grpc_bytes(ctx.host());
                 let service = Service {
@@ -147,7 +148,6 @@ where
                 } else {
                     session.step_both();
                 }
-                rsp.succeed = true;
                 rsp.service_port = u32::from(session.service_port);
                 rsp.heartbeat_port = u32::from(session.heartbeat_port);
                 rsp.session_id = session.session_id.0;
