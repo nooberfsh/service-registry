@@ -225,14 +225,8 @@ fn extract_host_from_grpc_bytes(addr: &[u8]) -> IpAddr {
 
 #[cfg(test)]
 mod tests {
-    extern crate env_logger;
-
-    use std::sync::mpsc;
-
-    use grpcio::ChannelBuilder;
-
-    use register::register_proto_grpc::*;
-    use super::*;
+    use std::net::IpAddr;
+    use super::{bytes_to_host, extract_host_from_grpc_bytes, Session, ServiceId};
 
     #[test]
     fn test_bytes_to_host() {
@@ -259,17 +253,17 @@ mod tests {
     fn test_extract_host_from_grpc_bytes() {
         let a = b"127.127.127.127:65535";
         let b = extract_host_from_grpc_bytes(a);
-        let ip = "127.127.127.127".parse().unwrap();
+        let ip: IpAddr = "127.127.127.127".parse().unwrap();
         assert_eq!(b, ip);
 
         let a = b"0.0.0.127:65535";
         let b = extract_host_from_grpc_bytes(a);
-        let ip = "0.0.0.127".parse().unwrap();
+        let ip: IpAddr = "0.0.0.127".parse().unwrap();
         assert_eq!(b, ip);
 
         let a = b"1.1.1.1:1";
         let b = extract_host_from_grpc_bytes(a);
-        let ip = "1.1.1.1".parse().unwrap();
+        let ip: IpAddr = "1.1.1.1".parse().unwrap();
         assert_eq!(b, ip);
     }
 
@@ -280,10 +274,10 @@ mod tests {
 
         s.step_heartbeat_port();
         s.step_service_port();
-        assert_eq!(s1.service_port, 20_000 + 1);
-        assert_eq!(s1.heartbeat_port, 25_000 + 1);
+        assert_eq!(s.service_port, 20_000 + 1);
+        assert_eq!(s.heartbeat_port, 25_000 + 1);
         s.step_both();
-        assert_eq!(s1.service_port, 20_000 + 2);
-        assert_eq!(s1.heartbeat_port, 25_000 + 2);
+        assert_eq!(s.service_port, 20_000 + 2);
+        assert_eq!(s.heartbeat_port, 25_000 + 2);
     }
 }
