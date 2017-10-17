@@ -249,15 +249,15 @@ struct Inner<P, Q> {
     receiver: Receiver<Message<Q>>,
     scheduler: FutureScheduler<HeartbeatTask>,
     timer_handle: TimerHandle,
-    default_interval: Duration,
+    interval: Duration,
     cb: Option<Cb<Q>>,
 }
 
 pub struct HubBuilder<P, Q> {
     cb: Option<Cb<Q>>,
-    default_timeout: Duration,
-    default_interval: Duration,
-    default_request: P,
+    timeout: Duration,
+    interval: Duration,
+    request: P,
 }
 
 impl<P, Q> HubBuilder<P, Q>
@@ -265,13 +265,23 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new(default_request: P, default_timeout: Duration, default_interval: Duration) -> Self {
+    pub fn new(request: P) -> Self {
         HubBuilder {
             cb: None,
-            default_timeout: default_timeout,
-            default_interval: default_interval,
-            default_request: default_request,
+            timeout: Duration::from_secs(5),
+            interval: Duration::from_secs(1),
+            request: request,
         }
+    }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn interval(mut self, interval: Duration) -> Self {
+        self.interval = interval;
+        self
     }
 
     pub fn cb<F>(mut self, cb: F) -> Self
@@ -283,7 +293,7 @@ where
     }
 
     pub fn build(self) -> Result<Hub<P, Q>, Error> {
-        let payload = self.default_request
+        let payload = self.request
             .write_to_bytes()
             .map_err(|e| {
                 let s = format!("{:?}", e);
@@ -301,7 +311,7 @@ where
             HeartbeatRunner {
                 sender: tx.clone(),
                 payload: payload,
-                timeout: self.default_timeout,
+                timeout: self.timeout,
             },
         );
         let scheduler = worker.get_scheduler();
@@ -327,7 +337,7 @@ where
             receiver: rx,
             scheduler: scheduler,
             timer_handle: timer_handle,
-            default_interval: self.default_interval,
+            interval: self.interval,
             cb: self.cb,
         };
 
@@ -345,12 +355,8 @@ where
     P: ProtoMessage,
     Q: MessageStatic,
 {
-    pub fn new(
-        default_request: P,
-        default_timeout: Duration,
-        default_interval: Duration,
-    ) -> Result<Self, Error> {
-        HubBuilder::new(default_request, default_timeout, default_interval).build()
+    pub fn new(request: P) -> Result<Self, Error> {
+        HubBuilder::new(request).build()
     }
 
     pub fn get_handle(&self) -> HubHandle<P, Q> {
@@ -387,10 +393,7 @@ where
                             };
                             if inner
                                 .timer_handle
-                                .timeout(
-                                    target.interval.unwrap_or_else(|| inner.default_interval),
-                                    f,
-                                )
+                                .timeout(target.interval.unwrap_or_else(|| inner.interval), f)
                                 .is_err()
                             {
                                 info!("detect worker scheduler stoped");
