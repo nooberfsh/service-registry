@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use service_registry::heartbeat::Server;
 use service_registry::heartbeat::heartbeat_proto::*;
 
