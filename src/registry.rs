@@ -125,6 +125,7 @@ where
                             detail,
                             e
                         );
+                        (inner.service_droped_handle)(detail.service);
                     }
                 }
                 Message::Stop => break,

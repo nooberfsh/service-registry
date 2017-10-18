@@ -55,6 +55,10 @@ impl Service {
     pub fn heartbeat_addr(&self) -> SocketAddr {
         SocketAddr::new(self.host, self.heartbeat_port)
     }
+
+    pub fn service_id(&self) -> ServiceId {
+        self.sid
+    }
 }
 
 #[cfg(test)]
