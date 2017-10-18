@@ -110,7 +110,7 @@ fn test_loop() {
 }
 
 fn send_req(addr: SocketAddr) {
-    let mut socket = TcpStream::connect(addr.clone()).unwrap();
+    let mut socket = TcpStream::connect(addr).unwrap();
 
     let request = util::simple_heartbeat_request();
     let size = request.compute_size();
