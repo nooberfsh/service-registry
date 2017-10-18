@@ -84,8 +84,8 @@ fn test_hub_interval() {
     let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
         .parse()
         .unwrap();
-    let interval = Duration::from_millis(50);
-    let timeout = Duration::from_millis(20);
+    let interval = Duration::from_secs(1);
+    let timeout = Duration::from_secs(2);
 
     let hub = HubBuilder::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request())
         .timeout(timeout)
@@ -100,21 +100,21 @@ fn test_hub_interval() {
 
     let id = hub.add_target(target);
     let mut count = 0;
-    while count < 6 {
+    while count < 4 {
         let (uuid, res) = rx.recv().unwrap();
         assert_eq!(id, uuid);
         assert_eq!(res.unwrap(), simple_heartbeat_response());
         count += 1;
     }
-    assert!(start.elapsed() > Duration::from_millis(250));
-    assert!(start.elapsed() < Duration::from_millis(300));
+    assert!(start.elapsed() > Duration::from_secs(3));
+    assert!(start.elapsed() < Duration::from_secs(4));
 }
 
 #[test]
 fn test_hub_timeout() {
     let port = 10_006;
     let mut server = Server::<HeartbeatRequest, HeartbeatResponse>::new("test_hub_timeout", |_| {
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_secs(2));
         simple_heartbeat_response()
     });
     server.start(port).unwrap();
@@ -122,19 +122,14 @@ fn test_hub_timeout() {
     let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
         .parse()
         .unwrap();
-    let interval = Duration::from_millis(50);
-    let timeout = Duration::from_millis(10);
-    let hub = HubBuilder::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request())
-        .timeout(timeout)
-        .interval(interval)
-        .build()
-        .unwrap();
+    let interval = Duration::from_secs(1);
+    let hub = Hub::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request()).unwrap();
     let (tx, rx) = mpsc::channel();
 
     //timeout happen.
     {
         let start = Instant::now();
-        let timeout_short = Duration::from_millis(50);
+        let timeout_short = Duration::from_secs(1);
         let tx_short = tx.clone();
         let target_short = TargetBuilder::new(&addr)
             .interval(interval)
@@ -146,17 +141,17 @@ fn test_hub_timeout() {
         let (id, res) = rx.recv().unwrap();
         assert_eq!(uuid, id);
         assert!(res.unwrap_err().is_timeout());
-        assert!(start.elapsed() >= Duration::from_millis(50));
-        assert!(start.elapsed() < Duration::from_millis(90));
+        assert!(start.elapsed() > Duration::from_secs(1));
+        assert!(start.elapsed() < Duration::from_secs(2));
     }
 
     //wait for server to finish the request
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_secs(1));
 
     //no timeout
     {
         let start = Instant::now();
-        let timeout_long = Duration::from_millis(200);
+        let timeout_long = Duration::from_secs(3);
         let tx_long = tx.clone();
         let target_long = TargetBuilder::new(&addr)
             .interval(interval)
@@ -168,8 +163,8 @@ fn test_hub_timeout() {
         let (id, res) = rx.recv().unwrap();
         assert_eq!(uuid, id);
         assert_eq!(res.unwrap(), simple_heartbeat_response());
-        assert!(start.elapsed() >= Duration::from_millis(100));
-        assert!(start.elapsed() < Duration::from_millis(140));
+        assert!(start.elapsed() >= Duration::from_secs(2));
+        assert!(start.elapsed() < Duration::from_secs(3));
     }
 }
 
@@ -185,14 +180,7 @@ fn test_remove_target() {
     let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
         .parse()
         .unwrap();
-    let interval = Duration::from_millis(50);
-    let timeout = Duration::from_millis(20);
-
-    let hub = HubBuilder::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request())
-        .timeout(timeout)
-        .interval(interval)
-        .build()
-        .unwrap();
+    let hub = Hub::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request()).unwrap();
     let (tx, rx) = mpsc::channel();
     let target = TargetBuilder::new(&addr)
         .cb(move |uuid, res| { tx.send((uuid, res)).unwrap(); })
@@ -211,8 +199,7 @@ fn test_remove_target() {
     let target = hub.remove_target(id).unwrap();
     assert_eq!(id, target.get_id());
 
-    let e = rx.recv_timeout(interval + Duration::from_millis(20))
-        .unwrap_err();
+    let e = rx.recv_timeout(Duration::from_secs(1)).unwrap_err();
     assert_eq!(e, RecvTimeoutError::Timeout);
 }
 
@@ -228,14 +215,8 @@ fn test_hub_handle() {
     let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
         .parse()
         .unwrap();
-    let interval = Duration::from_millis(50);
-    let timeout = Duration::from_millis(20);
 
-    let hub = HubBuilder::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request())
-        .timeout(timeout)
-        .interval(interval)
-        .build()
-        .unwrap();
+    let hub = Hub::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request()).unwrap();
     let hub_handle = hub.get_handle();
     let target = Target::<HeartbeatRequest, HeartbeatResponse>::new(&addr);
     let id = hub_handle.add_target(target).unwrap();
@@ -262,13 +243,9 @@ fn test_hub_cb() {
     let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
         .parse()
         .unwrap();
-    let interval = Duration::from_millis(50);
-    let timeout = Duration::from_millis(200);
 
     let (tx1, rx1) = mpsc::channel();
     let hub = HubBuilder::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request())
-        .timeout(timeout)
-        .interval(interval)
         .cb(move |uuid, res| { tx1.send((uuid, res)).unwrap(); })
         .build()
         .unwrap();
@@ -312,13 +289,7 @@ fn test_hub_target_payload() {
         .parse()
         .unwrap();
 
-    let interval = Duration::from_millis(50);
-    let timeout = Duration::from_millis(200);
-    let hub = HubBuilder::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request())
-        .timeout(timeout)
-        .interval(interval)
-        .build()
-        .unwrap();
+    let hub = Hub::<HeartbeatRequest, HeartbeatResponse>::new(simple_heartbeat_request()).unwrap();
 
     let (tx, rx) = mpsc::channel();
     {

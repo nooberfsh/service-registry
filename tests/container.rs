@@ -10,20 +10,20 @@ use std::sync::mpsc;
 use std::net::{TcpStream, SocketAddr};
 use std::io::{Read, Write};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use protobuf::core::parse_from_bytes;
 use protobuf::Message;
 use protobuf::stream::CodedOutputStream;
 use bytes::{BigEndian, ByteOrder};
 
-use service_registry::ServiceId;
-use service_registry::{rpc_server, container};
+use service_registry::{ServiceId, rpc_server};
+use service_registry::container::{Container, Executor};
 use service_registry::heartbeat::heartbeat_proto::*;
 
 struct Exe;
 
-impl container::Executor for Exe {
+impl Executor for Exe {
     fn service_id(&self) -> ServiceId {
         100_u64.into()
     }
@@ -39,17 +39,11 @@ fn test_register_and_run() {
     let addr = ("127.0.0.1:".to_string() + &format!("{}", port))
         .parse()
         .unwrap();
-    let interval = Duration::from_millis(200);
-
+    let interval = Duration::from_secs(1);
     let gen_rsp = |_| util::simple_heartbeat_response();
 
-
-    let mut container = container::Container::<HeartbeatRequest, HeartbeatResponse, Exe>::new(
-        addr,
-        interval,
-        gen_rsp,
-        Exe,
-    );
+    let mut container =
+        Container::<HeartbeatRequest, HeartbeatResponse, Exe>::new(addr, interval, gen_rsp, Exe);
 
 
     let res = container.start();
@@ -82,28 +76,25 @@ fn test_loop() {
     let mut server = rpc_server::create_grpc_server(port, register_handle, re_register_handle)
         .unwrap();
     server.start();
-    let interval = Duration::from_millis(200);
+    let interval = Duration::from_secs(1);
     let gen_rsp = |_| util::simple_heartbeat_response();
 
-    let mut container = container::Container::<HeartbeatRequest, HeartbeatResponse, Exe>::new(
-        addr,
-        interval,
-        gen_rsp,
-        Exe,
-    );
+    let mut container =
+        Container::<HeartbeatRequest, HeartbeatResponse, Exe>::new(addr, interval, gen_rsp, Exe);
 
     container.start().unwrap();
     let service = rx.recv().unwrap();
 
-    thread::sleep(interval + Duration::from_millis(10));
-
-    let re_service = re_rx.try_recv().unwrap();
+    let start = Instant::now();
+    let re_service = re_rx.recv().unwrap();
     assert_eq!(service, re_service);
+    assert!(start.elapsed() > Duration::from_secs(1));
+    assert!(start.elapsed() < Duration::from_secs(2));
 
-    thread::sleep(Duration::from_millis(100));
-    send_req(service.heartbeat_addr());
-    thread::sleep(Duration::from_millis(100));
-    send_req(service.heartbeat_addr());
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(100));
+        send_req(service.heartbeat_addr());
+    }
 
     let res = re_rx.try_recv();
     assert!(res.is_err());

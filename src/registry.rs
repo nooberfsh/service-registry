@@ -140,6 +140,7 @@ where
                 "add service:{:?} failed, it had been in the service table",
                 service
             );
+            return;
         }
         let sender = inner.sender.clone();
         let f = move |uuid, res| {
