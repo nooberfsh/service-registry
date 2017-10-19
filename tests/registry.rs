@@ -14,6 +14,8 @@ use service_registry::container::{Container, Executor};
 use service_registry::heartbeat::heartbeat_proto::*;
 use util::{simple_heartbeat_response, simple_heartbeat_request};
 
+static META: &str = "exe:meta";
+
 struct Exe {
     sid: ServiceId,
 }
@@ -21,6 +23,10 @@ struct Exe {
 impl Executor for Exe {
     fn service_id(&self) -> ServiceId {
         self.sid
+    }
+
+    fn meta(&self) -> String {
+        META.to_string()
     }
 
     fn run(&mut self, _: u16) -> bool {
@@ -71,6 +77,7 @@ fn test_registry() {
     let container_a = create_and_start(sida, max_interval);
     let sa = a_rx.recv().unwrap();
     assert_eq!(sida, sa.service_id());
+    assert_eq!(META, sa.meta());
 
     let sidb = 20_u64.into();
     let _container_b = create_and_start(sidb, max_interval);

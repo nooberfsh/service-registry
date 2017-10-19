@@ -4,6 +4,7 @@ package register;
 
 message RegisterRequest {
 	uint64 service_id = 1;
+	string meta = 2;
 }
 
 message RegisterResponse {
@@ -29,6 +30,7 @@ message ReRegisterRequest {
 	uint32 heartbeat_port = 1;
 	uint32 service_port = 2;
 	uint64 service_id = 3;
+	string meta = 4;
 }
 
 message ReRegisterResponse {

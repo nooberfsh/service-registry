@@ -42,6 +42,7 @@ impl From<u64> for ServiceId {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Service {
     sid: ServiceId,
+    meta: String,
     host: IpAddr,
     service_port: u16,
     heartbeat_port: u16,
@@ -58,6 +59,10 @@ impl Service {
 
     pub fn service_id(&self) -> ServiceId {
         self.sid
+    }
+
+    pub fn meta(&self) -> &str {
+        &self.meta
     }
 }
 

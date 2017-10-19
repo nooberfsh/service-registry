@@ -85,7 +85,10 @@ struct Inner {
     env: Arc<Environment>,
     service_port: u16,
     heartbeat_port: u16,
+
     service_id: ServiceId,
+    service_meta: String,
+
     rpc_server_addr: SocketAddr,
     heartbeat_interval: Duration,
 }
@@ -96,6 +99,7 @@ impl Inner {
         req.heartbeat_port = u32::from(self.heartbeat_port);
         req.service_port = u32::from(self.service_port);
         req.service_id = self.service_id.0;
+        req.meta = self.service_meta.clone();
 
         let addr = format!("{}", self.rpc_server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.env)).connect(&addr);
@@ -118,6 +122,9 @@ impl From<Error> for RpcError {
 
 pub trait Executor {
     fn service_id(&self) -> ServiceId;
+    fn meta(&self) -> String {
+        "".to_string()
+    }
     fn run(&mut self, port: u16) -> bool;
     fn stop(&mut self) {}
 }
@@ -167,6 +174,7 @@ where
         let client = RegisterClient::new(ch);
         let mut req = RegisterRequest::new();
         req.set_service_id(self.executor.service_id().0);
+        req.set_meta(self.executor.meta());
         client.register(req).map_err(|e| e.into())
     }
 
@@ -249,6 +257,7 @@ where
             service_port: self.meta.service_port.unwrap(),
             heartbeat_port: self.meta.heartbeat_port.unwrap(),
             service_id: self.executor.service_id(),
+            service_meta: self.executor.meta(),
             rpc_server_addr: self.rpc_server_addr,
             heartbeat_interval: self.heartbeat_interval,
         };

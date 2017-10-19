@@ -36,6 +36,7 @@ impl From<u64> for SessionId {
 struct Session {
     session_id: SessionId,
     service_id: ServiceId,
+    meta: String,
     host: IpAddr,
     service_port: u16,
     heartbeat_port: u16,
@@ -45,10 +46,11 @@ impl Session {
     const DEFAULT_SERVICE_PORT: u16 = 20_000;
     const DEFAULT_HEARTBEAT_PORT: u16 = 25_000;
 
-    fn new<T: Into<IpAddr>>(service_id: ServiceId, host: T) -> Self {
+    fn new<T: Into<IpAddr>>(service_id: ServiceId, meta: String, host: T) -> Self {
         Session {
             session_id: fresh_session_id().into(),
             service_id: service_id,
+            meta: meta,
             host: host.into(),
             service_port: Self::DEFAULT_SERVICE_PORT,
             heartbeat_port: Self::DEFAULT_HEARTBEAT_PORT,
@@ -117,7 +119,7 @@ where
 {
     fn register(&self, ctx: RpcContext, req: RegisterRequest, sink: UnarySink<RegisterResponse>) {
         let host = extract_host_from_grpc_bytes(ctx.host());
-        let session = Session::new(req.service_id.into(), host);
+        let session = Session::new(req.service_id.into(), req.meta, host);
         let mut lock = self.sessions.lock().unwrap();
         debug_assert!(!lock.contains_key(&session.session_id));
         lock.insert(session.session_id, session.clone());
@@ -135,6 +137,7 @@ where
                 let host = extract_host_from_grpc_bytes(ctx.host());
                 let service = Service {
                     sid: session.service_id,
+                    meta: session.meta,
                     host: host,
                     service_port: session.service_port,
                     heartbeat_port: session.heartbeat_port,
@@ -169,6 +172,7 @@ where
         let host = extract_host_from_grpc_bytes(ctx.host());
         let service = Service {
             sid: req.service_id.into(),
+            meta: req.meta,
             host: host,
             service_port: req.service_port as u16,
             heartbeat_port: req.heartbeat_port as u16,
@@ -273,7 +277,7 @@ mod tests {
     #[test]
     fn test_session() {
         let ip = [0; 4];
-        let mut s = Session::new(ServiceId(1), ip);
+        let mut s = Session::new(ServiceId(1), "".to_string(), ip);
 
         s.step_heartbeat_port();
         s.step_service_port();
