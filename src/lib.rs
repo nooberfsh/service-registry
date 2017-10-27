@@ -7,6 +7,9 @@ extern crate log;
 extern crate futures;
 extern crate tokio_core;
 extern crate tokio_io;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate bytes;
 extern crate uuid;
 extern crate mio;
@@ -25,6 +28,7 @@ mod registry_proto;
 mod registry_proto_grpc;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
+#[derive(Serialize, Deserialize)]
 pub struct ServiceId(pub u64);
 
 impl From<usize> for ServiceId {
@@ -40,6 +44,7 @@ impl From<u64> for ServiceId {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Serialize, Deserialize)]
 pub struct Service {
     sid: ServiceId,
     meta: String,

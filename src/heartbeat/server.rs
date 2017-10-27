@@ -24,16 +24,16 @@ pub struct Server<P, Q> {
 }
 
 fn handle_bytes<P, Q, T>(
-    bytes: BytesMut,
+    bytes: &BytesMut,
     framed: Framed<T>,
     handle: &Handle,
-    handler: Handler<P, Q>,
+    handler: &Handler<P, Q>,
 ) where
     P: MessageStatic,
     Q: Message,
     T: AsyncWrite + 'static,
 {
-    match parse_from_bytes::<P>(&bytes) {
+    match parse_from_bytes::<P>(bytes) {
         Ok(p) => {
             let v = handler(p).write_to_bytes().unwrap(); // TODO error handle;
             let f = framed.send(v.into()).map(|_| ()).map_err(|e| {
@@ -62,7 +62,7 @@ fn serve<P, Q>(
                 .into_future()
                 .map_err(|(e, _)| warn!("framed: {:?}", e))
                 .map(|(bytes, framed)| match bytes {
-                    Some(bytes) => handle_bytes(bytes, framed, &handle, Arc::clone(handler)),
+                    Some(bytes) => handle_bytes(&bytes, framed, &handle, handler),
                     None => warn!("closed by client"),
                 })
                 .then(|_| Ok(())) // always return Ok(()) to prevent server shutdown
