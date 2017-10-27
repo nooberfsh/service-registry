@@ -25,7 +25,7 @@ mod registry_proto;
 mod registry_proto_grpc;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
-pub struct ServiceId(u64);
+pub struct ServiceId(pub u64);
 
 impl From<usize> for ServiceId {
     fn from(u: usize) -> Self {
