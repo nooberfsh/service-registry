@@ -28,7 +28,7 @@ fn test_rpc_server() {
     let client = RegisterClient::new(ch);
     let mut req = RegisterRequest::new();
     req.set_service_id(service_id);
-    let rsp = client.register(req).unwrap();
+    let rsp = client.register(&req).unwrap();
     let session_id = rsp.session_id;
 
     assert_eq!(rsp.service_port, 20_000);
@@ -39,7 +39,7 @@ fn test_rpc_server() {
     req.set_service_succeed(false);
     req.set_session_id(session_id);
 
-    let rsp = client.report_status(req.clone()).unwrap();
+    let rsp = client.report_status(&req).unwrap();
     assert_eq!(rsp.succeed, true);
     assert_eq!(rsp.service_port, 20_000 + 1);
     assert_eq!(rsp.heartbeat_port, 25_000 + 1);
@@ -49,13 +49,13 @@ fn test_rpc_server() {
     req.set_heartbeat_succeed(true);
     req.set_service_succeed(true);
     req.set_session_id(session_id);
-    let _ = client.report_status(req.clone()).unwrap();
+    let _ = client.report_status(&req).unwrap();
 
     let service = rx.recv().unwrap();
     assert_eq!(service.service_port, 20_000 + 1);
     assert_eq!(service.heartbeat_port, 25_000 + 1);
 
-    let rsp = client.report_status(req.clone()).unwrap();
+    let rsp = client.report_status(&req).unwrap();
     assert_eq!(rsp.succeed, false);
 
     //simulate server crash.
@@ -67,14 +67,14 @@ fn test_rpc_server() {
     server.start();
     let ch = ChannelBuilder::new(Arc::clone(&env)).connect(&addr);
     let client = RegisterClient::new(ch);
-    let rsp = client.report_status(req.clone()).unwrap();
+    let rsp = client.report_status(&req).unwrap();
     assert_eq!(rsp.succeed, false);
 
     let mut req = ReRegisterRequest::new();
     req.set_heartbeat_port(21_000);
     req.set_service_port(22_000);
 
-    let rsp = client.re_register(req).unwrap();
+    let rsp = client.re_register(&req).unwrap();
     assert_eq!(rsp.succeed, true);
 
     let service = re_rx.recv().unwrap();
@@ -106,14 +106,14 @@ fn test_service_meta() {
     let mut req = RegisterRequest::new();
     req.set_service_id(service_id);
     req.set_meta(meta.to_string());
-    let rsp = client.register(req).unwrap();
+    let rsp = client.register(&req).unwrap();
     let session_id = rsp.session_id;
 
     let mut req = StatusRequest::new();
     req.set_heartbeat_succeed(true);
     req.set_service_succeed(true);
     req.set_session_id(session_id);
-    client.report_status(req).unwrap();
+    client.report_status(&req).unwrap();
 
     let service = rx.recv().unwrap();
     assert_eq!(service.service_id(), service_id.into());
@@ -129,7 +129,7 @@ fn test_service_meta() {
     req.set_service_port(22_000);
     req.set_meta(meta.to_string());
 
-    let rsp = client.re_register(req).unwrap();
+    let rsp = client.re_register(&req).unwrap();
     assert_eq!(rsp.succeed, true);
 
     let service = re_rx.recv().unwrap();

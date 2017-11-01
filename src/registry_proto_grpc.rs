@@ -50,51 +50,51 @@ impl RegisterClient {
         }
     }
 
-    pub fn register_opt(&self, req: super::registry_proto::RegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::RegisterResponse> {
+    pub fn register_opt(&self, req: &super::registry_proto::RegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::RegisterResponse> {
         self.client.unary_call(&METHOD_REGISTER_REGISTER, req, opt)
     }
 
-    pub fn register(&self, req: super::registry_proto::RegisterRequest) -> ::grpcio::Result<super::registry_proto::RegisterResponse> {
+    pub fn register(&self, req: &super::registry_proto::RegisterRequest) -> ::grpcio::Result<super::registry_proto::RegisterResponse> {
         self.register_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn register_async_opt(&self, req: super::registry_proto::RegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::RegisterResponse> {
+    pub fn register_async_opt(&self, req: &super::registry_proto::RegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::RegisterResponse> {
         self.client.unary_call_async(&METHOD_REGISTER_REGISTER, req, opt)
     }
 
-    pub fn register_async(&self, req: super::registry_proto::RegisterRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::RegisterResponse> {
+    pub fn register_async(&self, req: &super::registry_proto::RegisterRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::RegisterResponse> {
         self.register_async_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn report_status_opt(&self, req: super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::StatusResponse> {
+    pub fn report_status_opt(&self, req: &super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::StatusResponse> {
         self.client.unary_call(&METHOD_REGISTER_REPORT_STATUS, req, opt)
     }
 
-    pub fn report_status(&self, req: super::registry_proto::StatusRequest) -> ::grpcio::Result<super::registry_proto::StatusResponse> {
+    pub fn report_status(&self, req: &super::registry_proto::StatusRequest) -> ::grpcio::Result<super::registry_proto::StatusResponse> {
         self.report_status_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn report_status_async_opt(&self, req: super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::StatusResponse> {
+    pub fn report_status_async_opt(&self, req: &super::registry_proto::StatusRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::StatusResponse> {
         self.client.unary_call_async(&METHOD_REGISTER_REPORT_STATUS, req, opt)
     }
 
-    pub fn report_status_async(&self, req: super::registry_proto::StatusRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::StatusResponse> {
+    pub fn report_status_async(&self, req: &super::registry_proto::StatusRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::StatusResponse> {
         self.report_status_async_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn re_register_opt(&self, req: super::registry_proto::ReRegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::ReRegisterResponse> {
+    pub fn re_register_opt(&self, req: &super::registry_proto::ReRegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::Result<super::registry_proto::ReRegisterResponse> {
         self.client.unary_call(&METHOD_REGISTER_RE_REGISTER, req, opt)
     }
 
-    pub fn re_register(&self, req: super::registry_proto::ReRegisterRequest) -> ::grpcio::Result<super::registry_proto::ReRegisterResponse> {
+    pub fn re_register(&self, req: &super::registry_proto::ReRegisterRequest) -> ::grpcio::Result<super::registry_proto::ReRegisterResponse> {
         self.re_register_opt(req, ::grpcio::CallOption::default())
     }
 
-    pub fn re_register_async_opt(&self, req: super::registry_proto::ReRegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ReRegisterResponse> {
+    pub fn re_register_async_opt(&self, req: &super::registry_proto::ReRegisterRequest, opt: ::grpcio::CallOption) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ReRegisterResponse> {
         self.client.unary_call_async(&METHOD_REGISTER_RE_REGISTER, req, opt)
     }
 
-    pub fn re_register_async(&self, req: super::registry_proto::ReRegisterRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ReRegisterResponse> {
+    pub fn re_register_async(&self, req: &super::registry_proto::ReRegisterRequest) -> ::grpcio::ClientUnaryReceiver<super::registry_proto::ReRegisterResponse> {
         self.re_register_async_opt(req, ::grpcio::CallOption::default())
     }
     pub fn spawn<F>(&self, f: F) where F: ::futures::Future<Item = (), Error = ()> + Send + 'static {

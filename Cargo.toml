@@ -11,7 +11,6 @@ log = "0.3"
 bytes = "0.4"
 protobuf = "1.4"
 mio = "0.6"
-grpcio = "0.1"
 serde = "1.0"
 serde_derive = "1.0"
 
@@ -21,6 +20,9 @@ features = ["v4"]
 
 [dependencies.worker]
 git = "http://gitlab.tanjiavr.com/tom/future-worker.git"
+
+[dependencies.grpcio]
+git = "https://github.com/nooberfsh/grpc-rs.git"
 
 [dev-dependencies]
 env_logger = "0.4"

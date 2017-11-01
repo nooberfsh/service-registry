@@ -104,7 +104,7 @@ impl Inner {
         let addr = format!("{}", self.rpc_server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.env)).connect(&addr);
         let client = RegisterClient::new(ch);
-        client.re_register(req).map_err(From::from)
+        client.re_register(&req).map_err(From::from)
     }
 }
 
@@ -175,7 +175,7 @@ where
         let mut req = RegisterRequest::new();
         req.set_service_id(self.executor.service_id().0);
         req.set_meta(self.executor.meta());
-        client.register(req).map_err(|e| e.into())
+        client.register(&req).map_err(|e| e.into())
     }
 
     fn report_status(&self, session_id: u64) -> Result<StatusResponse, RpcError> {
@@ -187,7 +187,7 @@ where
         let addr = format!("{}", self.rpc_server_addr);
         let ch = ChannelBuilder::new(Arc::clone(&self.rpc_env)).connect(&addr);
         let client = RegisterClient::new(ch);
-        client.report_status(req).map_err(|e| e.into())
+        client.report_status(&req).map_err(|e| e.into())
     }
 
     fn register_registration(&mut self, poll: &Poll) {
