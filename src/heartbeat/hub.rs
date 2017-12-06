@@ -17,7 +17,7 @@ use tokio_io::codec::length_delimited::Framed;
 use protobuf::core::parse_from_bytes;
 use protobuf::{Message as ProtoMessage, MessageStatic};
 use uuid::Uuid;
-use worker::{FutureRunner, FutureWorker, FutureScheduler};
+use worker::future::{Runner, Worker, Scheduler, BoxFuture};
 
 use super::Error;
 use super::timer::{Timer, TimerHandle};
@@ -211,11 +211,11 @@ where
     }
 }
 
-impl<Q> FutureRunner<HeartbeatTask> for HeartbeatRunner<Q>
+impl<Q> Runner<HeartbeatTask> for HeartbeatRunner<Q>
 where
     Q: MessageStatic + 'static,
 {
-    fn run(&mut self, task: HeartbeatTask, handle: &Handle) {
+    fn future(&self, task: HeartbeatTask, handle: &Handle) -> BoxFuture {
         let uuid = task.uuid;
         let sender = self.sender.clone();
         let f = self.gen_heartbeat_future(task, handle).then(move |r| {
@@ -224,7 +224,7 @@ where
             sender.send(msg).unwrap();
             Ok(())
         });
-        handle.spawn(f);
+        Box::new(f)
     }
 }
 
@@ -239,7 +239,7 @@ type Targets<P, Q> = Arc<Mutex<HashMap<Uuid, Target<P, Q>>>>;
 
 pub struct Hub<P, Q> {
     handle: HubHandle<P, Q>,
-    worker: Option<FutureWorker<HeartbeatTask>>,
+    worker: Option<Worker<HeartbeatTask>>,
     timer: Option<Timer>,
     thread_handle: Option<JoinHandle<()>>,
 }
@@ -247,7 +247,7 @@ pub struct Hub<P, Q> {
 struct Inner<P, Q> {
     handle: HubHandle<P, Q>,
     receiver: Receiver<Message<Q>>,
-    scheduler: FutureScheduler<HeartbeatTask>,
+    scheduler: Scheduler<HeartbeatTask>,
     timer_handle: TimerHandle,
     interval: Duration,
     cb: Option<Cb<Q>>,
@@ -306,7 +306,7 @@ where
             })?;
 
         let (tx, rx) = mpsc::channel();
-        let worker = FutureWorker::new(
+        let worker = Worker::new(
             "heartbeat_hub_worker",
             HeartbeatRunner {
                 sender: tx.clone(),

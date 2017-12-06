@@ -4,7 +4,8 @@ use std::boxed::FnBox;
 use futures::Future;
 use tokio_core::reactor::{Handle, Timeout};
 
-use worker::{FutureRunner, FutureWorker, FutureScheduler, Stopped};
+use worker::Stopped;
+use worker::future::{Runner, Worker, Scheduler, BoxFuture};
 
 struct Task {
     timeout: Duration,
@@ -25,26 +26,26 @@ impl Task {
 
 struct TimerImpl;
 
-impl FutureRunner<Task> for TimerImpl {
-    fn run(&mut self, task: Task, handle: &Handle) {
+impl Runner<Task> for TimerImpl {
+    fn future(&self, task: Task, handle: &Handle) -> BoxFuture {
         let f = Timeout::new(task.timeout, handle).unwrap().then(move |_| {
             Ok((task.cb)())
         });
-        handle.spawn(f);
+        Box::new(f)
     }
 }
 
 pub struct Timer {
-    worker: FutureWorker<Task>,
+    worker: Worker<Task>,
 }
 
 pub struct TimerHandle {
-    scheduler: FutureScheduler<Task>,
+    scheduler: Scheduler<Task>,
 }
 
 impl Timer {
     pub fn new<N: Into<String>>(name: N) -> Self {
-        Timer { worker: FutureWorker::new(name, TimerImpl) }
+        Timer { worker: Worker::new(name, TimerImpl) }
     }
 
     #[allow(dead_code)]
